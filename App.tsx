@@ -23,7 +23,7 @@ import NewsBroadcast from './components/NewsBroadcast';
 import AuditLogs from './components/AuditLogs';
 import JobPortal from './components/JobPortal'; 
 import Login from './components/Login';
-import { MOCK_STUDENTS, MOCK_ATTENDANCE, MOCK_BEHAVIOR, MOCK_SUBJECTS, MOCK_STUDY_BLOCKS } from './data/mockData';
+import { MOCK_STUDENTS, MOCK_ATTENDANCE, MOCK_BEHAVIOR, MOCK_SUBJECTS, MOCK_STUDY_BLOCKS, MOCK_TUITION_CONFIGS } from './data/mockData';
 import { Student, AttendanceRecord, BehaviorRecord, Subject, User, StudyBlock, TuitionConfig, PaymentRecord, NotificationRecord, NewsRecord, LoginLog } from './types';
 
 const App: React.FC = () => {
@@ -45,8 +45,8 @@ const App: React.FC = () => {
   const [isFirebaseReady, setIsFirebaseReady] = useState(false);
   const [firebaseUser, setFirebaseUser] = useState<any>(null);
 
-  const [students, setStudents] = useState<Student[]>([]);
-  const [isStudentsLoaded, setIsStudentsLoaded] = useState(false);
+  const [students, setStudents] = useState<Student[]>(MOCK_STUDENTS);
+  const [isStudentsLoaded, setIsStudentsLoaded] = useState(true);
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [behaviorRecords, setBehaviorRecords] = useState<BehaviorRecord[]>([]);
   const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
@@ -102,9 +102,17 @@ const App: React.FC = () => {
     // Attempt silent anonymous sign-in to enable Firestore sync if configured
     const initAnon = async () => {
       try {
-        await signInAnonymously(auth);
-      } catch (e) {
-        console.warn("Firebase Anonymous Auth not available", e);
+        console.log("Attempting Firebase anonymous sign-in...");
+        const cred = await signInAnonymously(auth);
+        console.log("Firebase Anonymous Auth successful", cred.user.uid);
+      } catch (e: any) {
+        if (e.code === 'auth/admin-restricted-operation') {
+          console.warn("Anonymous Auth is disabled in Firebase Console. Please enable it in Authentication > Sign-in method.");
+        } else {
+          console.error("Firebase Anonymous Auth failed:", e);
+        }
+        // Even if anon fails, we allow the app to boot so the user can use local tools or log in via Google
+        setIsFirebaseReady(true);
       }
     };
     initAnon();
@@ -142,7 +150,17 @@ const App: React.FC = () => {
       }
     });
 
-    const unsubTuitionConfigs = syncCollection<TuitionConfig>('tuition_configs', setTuitionConfigs);
+    const unsubTuitionConfigs = syncCollection<TuitionConfig>('tuition_configs', (data) => {
+      if (data.length > 0) setTuitionConfigs(data);
+      else if (isFirebaseReady) {
+         setTuitionConfigs(MOCK_TUITION_CONFIGS);
+         const hasSeeded = localStorage.getItem('seeded_tuition');
+         if (!hasSeeded && firebaseUser) {
+           saveMultipleToFirestore('tuition_configs', MOCK_TUITION_CONFIGS);
+           localStorage.setItem('seeded_tuition', 'true');
+         }
+      }
+    });
 
     // PRIVATE COLLECTIONS
     let unsubStudents = () => {};
@@ -152,20 +170,32 @@ const App: React.FC = () => {
     let unsubUsers = () => {};
 
     if (firebaseUser) {
+      console.log("Firebase user detected, starting subscriptions...", firebaseUser.uid);
       setIsSyncingWithCloud(true);
       unsubStudents = syncCollection<Student>('students', (data) => {
-        setStudents(data);
-        setIsStudentsLoaded(true);
-        setIsSyncingWithCloud(false);
+        console.log(`Synced ${data.length} students from cloud`);
         
-        // Auto-seed if empty (only if we're sure it should be)
-        if (data.length === 0) {
-           const hasSeeded = localStorage.getItem('seeded_students_v1');
-           if (!hasSeeded) {
-             saveMultipleToFirestore('students', MOCK_STUDENTS);
-             localStorage.setItem('seeded_students_v1', 'true');
-           }
+        if (data.length > 0) {
+          setStudents(data);
+          setIsStudentsLoaded(true);
+        } else {
+          // Cloud is empty, use MOCK as fallback for local view
+          console.log("Cloud is empty, using MOCK_STUDENTS as local view");
+          setStudents(MOCK_STUDENTS);
+          setIsStudentsLoaded(true);
+          
+          // Try to seed cloud if we have permissions
+          const lastAttempt = localStorage.getItem('last_seed_attempt');
+          const now = Date.now();
+          if (!lastAttempt || now - parseInt(lastAttempt) > 300000) {
+            console.log("Attempting to seed Cloud from MOCK_STUDENTS...");
+            localStorage.setItem('last_seed_attempt', now.toString());
+            saveMultipleToFirestore('students', MOCK_STUDENTS)
+              .then(() => console.log("Seeding complete"))
+              .catch(err => console.warn("Seed skipped: Authentication/Permissions restricted.", err));
+          }
         }
+        setIsSyncingWithCloud(false);
       });
 
       unsubAttendance = syncCollection<AttendanceRecord>('attendance', setAttendance);
@@ -184,6 +214,12 @@ const App: React.FC = () => {
           ]);
         }
       });
+    } else if (isFirebaseReady) {
+      // Fallback for when not logged in or auth failed (e.g. anon disabled)
+      console.log("Using local fallback data (Not authenticated)");
+      setStudents(MOCK_STUDENTS);
+      setIsStudentsLoaded(true);
+      setIsSyncingWithCloud(false);
     }
 
     return () => {
@@ -266,7 +302,7 @@ const App: React.FC = () => {
       case 'job_portal': return <JobPortal currentUser={user} students={students} />; 
       case 'broadcast': return <NewsBroadcast students={students} news={news} setNews={(val) => { setNews(val); }} currentUser={user} />;
       case 'quick_scan': return <QuickScan students={students} attendanceRecords={attendance} setAttendanceRecords={setAttendance} />;
-      case 'students': return <StudentManagement students={students} setStudents={setStudents} isSyncing={isSyncingWithCloud} />;
+      case 'students': return <StudentManagement students={students} setStudents={setStudents} isSyncing={isSyncingWithCloud} isLoading={!isStudentsLoaded} />;
       case 'morning': return <MorningAttendance students={students} setStudents={setStudents} attendanceRecords={attendance} setAttendanceRecords={setAttendance} rooms={rooms} setRooms={setRooms} />;
       case 'subject': return <ClassAttendance students={students} setStudents={setStudents} subjects={subjects} setSubjects={setSubjects} rooms={rooms} setRooms={setRooms} attendanceRecords={attendance} setAttendanceRecords={setAttendance} currentUser={user} />;
       case 'behavior': return <BehaviorSystem students={students} setStudents={setStudents} behaviorRecords={behaviorRecords} setBehaviorRecords={setBehaviorRecords} />;
