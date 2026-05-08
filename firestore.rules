@@ -98,7 +98,7 @@ service cloud.firestore {
     }
 
     match /students/{studentId} {
-      allow read: if isSignedIn();
+      allow read: if true;
       allow create: if isValidId(studentId) && isValidStudent(incoming()) && (isSignedIn());
       allow update: if isValidId(studentId) && isValidStudent(incoming()) && (isSignedIn());
       allow delete: if isSignedIn();
