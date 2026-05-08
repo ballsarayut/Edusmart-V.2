@@ -1,0 +1,8 @@
+{
+  "name": "Remix: EduSmart Vocational CMS2",
+  "description": "ระบบบริหารจัดการสถานศึกษาระดับอาชีวศึกษา (CMS) ครบวงจรสำหรับครูและผู้บริหาร รองรับการเช็คชื่อเข้าแถว เข้าเรียน และระบบคะแนนพฤติกรรม",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": []
+}

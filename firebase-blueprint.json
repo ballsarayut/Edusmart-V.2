@@ -1,0 +1,254 @@
+{
+  "entities": {
+    "Student": {
+      "title": "Student",
+      "description": "Student record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "studentId": { "type": "string" },
+        "name": { "type": "string" },
+        "level": { "type": "string" },
+        "department": { "type": "string" },
+        "room": { "type": "string" },
+        "behaviorScore": { "type": "number" }
+      },
+      "required": ["id", "studentId", "name", "level", "department", "room", "behaviorScore"]
+    },
+    "AttendanceRecord": {
+      "title": "AttendanceRecord",
+      "description": "Daily attendance record (morning or subject)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "studentId": { "type": "string" },
+        "date": { "type": "string" },
+        "type": { "type": "string", "enum": ["MORNING", "SUBJECT"] },
+        "subjectId": { "type": "string" },
+        "status": { "type": "string", "enum": ["PRESENT", "LATE", "ABSENT", "BUSINESS_LEAVE", "SICK_LEAVE"] },
+        "remark": { "type": "string" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["id", "studentId", "date", "type", "status", "timestamp"]
+    },
+    "BehaviorRecord": {
+      "title": "BehaviorRecord",
+      "description": "Student behavior point record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "studentId": { "type": "string" },
+        "type": { "type": "string", "enum": ["ADD", "DEDUCT"] },
+        "score": { "type": "number" },
+        "reason": { "type": "string" },
+        "date": { "type": "string" },
+        "recordedBy": { "type": "string" }
+      },
+      "required": ["id", "studentId", "type", "score", "reason", "date", "recordedBy"]
+    },
+    "NewsRecord": {
+      "title": "NewsRecord",
+      "description": "News broadcast record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "type": { "type": "string", "enum": ["INFO", "URGENT", "EVENT"] },
+        "targetType": { "type": "string", "enum": ["ALL", "DEPT", "ROOM", "INDIVIDUAL"] },
+        "authorName": { "type": "string" },
+        "date": { "type": "string" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["id", "title", "content", "type", "targetType", "authorName", "date", "timestamp"]
+    },
+    "Subject": {
+      "title": "Subject",
+      "description": "Subject metadata",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "code": { "type": "string" },
+        "teacherId": { "type": "string" },
+        "level": { "type": "string" },
+        "department": { "type": "string" }
+      },
+      "required": ["id", "name", "code", "teacherId", "level", "department"]
+    },
+    "PaymentRecord": {
+      "title": "PaymentRecord",
+      "description": "Tuition payment record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "studentId": { "type": "string" },
+        "configId": { "type": "string" },
+        "amount": { "type": "number" },
+        "method": { "type": "string", "enum": ["CASH", "TRANSFER"] },
+        "date": { "type": "string" },
+        "recordedBy": { "type": "string" },
+        "status": { "type": "string", "enum": ["PAID", "PARTIAL", "PENDING"] }
+      },
+      "required": ["id", "studentId", "configId", "amount", "method", "date", "recordedBy", "status"]
+    },
+    "StudyBlock": {
+      "title": "StudyBlock",
+      "description": "Academic study block",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "name": { "type": "string" },
+        "startDate": { "type": "string" },
+        "endDate": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "examDate": { "type": "string" }
+      },
+      "required": ["id", "name", "startDate", "endDate", "isActive"]
+    },
+    "User": {
+      "title": "User",
+      "description": "System user account",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string" },
+        "department": { "type": "string" },
+        "username": { "type": "string" },
+        "password": { "type": "string" },
+        "studentId": { "type": "string" },
+        "companyName": { "type": "string" }
+      },
+      "required": ["id", "name", "role", "username", "password"]
+    },
+    "TuitionConfig": {
+      "title": "TuitionConfig",
+      "description": "Tuition fee configuration",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "level": { "type": "string" },
+        "department": { "type": "string" },
+        "amount": { "type": "number" },
+        "term": { "type": "string" }
+      },
+      "required": ["id", "level", "department", "amount", "term"]
+    },
+    "JobAnnouncement": {
+      "title": "JobAnnouncement",
+      "description": "Job or internship announcement",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["JOB", "INTERNSHIP"] },
+        "title": { "type": "string" },
+        "companyName": { "type": "string" },
+        "description": { "type": "string" },
+        "location": { "type": "string" },
+        "salary": { "type": "string" },
+        "contact": { "type": "string" },
+        "date": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "postedBy": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["id", "type", "title", "companyName", "description", "location", "contact", "date", "timestamp", "postedBy"]
+    },
+    "LoginLog": {
+      "title": "LoginLog",
+      "description": "System login log",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userRole": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "deviceInfo": { "type": "string" },
+        "ipAddress": { "type": "string" }
+      },
+      "required": ["id", "userId", "userName", "userRole", "timestamp", "deviceInfo"]
+    },
+    "NotificationRecord": {
+      "title": "NotificationRecord",
+      "description": "User notification",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "studentId": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "type": { "type": "string", "enum": ["ABSENT", "LATE", "LEAVE", "INFO"] },
+        "date": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "isRead": { "type": "boolean" }
+      },
+      "required": ["id", "studentId", "title", "message", "type", "date", "timestamp", "isRead"]
+    },
+    "SystemConfig": {
+      "title": "SystemConfig",
+      "description": "General system settings",
+      "type": "object",
+      "properties": {
+        "morningTimeLimit": { "type": "string" },
+        "scanMode": { "type": "string", "enum": ["BARCODE_SCANNER", "CAMERA"] }
+      },
+      "required": ["morningTimeLimit", "scanMode"]
+    }
+  },
+  "firestore": {
+    "students": {
+      "schema": "Student",
+      "description": "Collection of students"
+    },
+    "attendance": {
+      "schema": "AttendanceRecord",
+      "description": "Collection of attendance records"
+    },
+    "behavior": {
+      "schema": "BehaviorRecord",
+      "description": "Collection of behavior records"
+    },
+    "news": {
+      "schema": "NewsRecord",
+      "description": "Collection of news records"
+    },
+    "subjects": {
+      "schema": "Subject",
+      "description": "Collection of subjects"
+    },
+    "payments": {
+      "schema": "PaymentRecord",
+      "description": "Collection of payment records"
+    },
+    "blocks": {
+      "schema": "StudyBlock",
+      "description": "Collection of study blocks"
+    },
+    "users": {
+      "schema": "User",
+      "description": "Collection of system users"
+    },
+    "tuition_configs": {
+      "schema": "TuitionConfig",
+      "description": "Collection of tuition configurations"
+    },
+    "jobs": {
+      "schema": "JobAnnouncement",
+      "description": "Collection of job announcements"
+    },
+    "login_logs": {
+      "schema": "LoginLog",
+      "description": "Collection of login logs"
+    },
+    "notifications": {
+      "schema": "NotificationRecord",
+      "description": "Collection of notifications"
+    },
+    "config": {
+      "schema": "SystemConfig",
+      "description": "System configuration"
+    }
+  }
+}

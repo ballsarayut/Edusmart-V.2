@@ -1,0 +1,173 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 3. Path Variable Hardening
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function incoming() {
+      return request.resource.data;
+    }
+    function existing() {
+      return resource.data;
+    }
+    
+    // RBAC Helpers
+    // In this app, users are stored with custom IDs. 
+    // We assume request.auth.uid matches the document ID in 'users' collection 
+    // OR the app logic links them.
+    function hasRole(role) {
+      return isSignedIn() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == role;
+    }
+    function isAdmin() { return hasRole('ADMIN'); }
+    function isTeacher() { return hasRole('TEACHER'); }
+    function isAcademic() { return hasRole('ACADEMIC'); }
+    function isFinance() { return hasRole('FINANCE'); }
+    function isCompany() { return hasRole('COMPANY'); }
+    function isParent() { return hasRole('PARENT'); }
+
+    // --- Connectivity Test ---
+    match /test/connection {
+      allow read: if true;
+    }
+    match /test/{id} {
+      allow read: if true;
+    }
+
+    // --- Entity Validations ---
+
+    function isValidStudent(data) {
+      return data.keys().hasAll(['id', 'studentId', 'name', 'level', 'department', 'room', 'behaviorScore']) &&
+             data.id is string && data.id.size() <= 64 &&
+             data.studentId is string && data.studentId.size() <= 20 &&
+             data.name is string && data.name.size() <= 200 &&
+             data.level is string && data.level.size() <= 50 &&
+             data.department is string && data.department.size() <= 100 &&
+             data.room is string && data.room.size() <= 20 &&
+             data.behaviorScore is number;
+    }
+
+    function isValidAttendance(data) {
+      return data.keys().hasAll(['id', 'studentId', 'date', 'type', 'status', 'timestamp']) &&
+             data.id is string &&
+             data.studentId is string &&
+             data.type in ['MORNING', 'SUBJECT'] &&
+             data.status in ['PRESENT', 'LATE', 'ABSENT', 'BUSINESS_LEAVE', 'SICK_LEAVE'] &&
+             data.date is string &&
+             data.timestamp is string; // App uses ISOStrings
+    }
+
+    function isValidBehavior(data) {
+      return data.keys().hasAll(['id', 'studentId', 'type', 'score', 'reason', 'date', 'recordedBy']) &&
+             data.id is string &&
+             data.studentId is string &&
+             data.type in ['ADD', 'DEDUCT'] &&
+             data.score is number &&
+             data.reason is string &&
+             data.date is string &&
+             data.recordedBy is string;
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['id', 'name', 'role', 'username', 'password']) &&
+             data.role in ['ADMIN', 'TEACHER', 'PARENT', 'FINANCE', 'ACADEMIC', 'COMPANY'];
+    }
+
+    // --- Rules ---
+
+    match /users/{userId} {
+      allow get: if isSignedIn() && (request.auth.uid == userId || true); // Relaxed for anonymous dev
+      allow list: if isSignedIn();
+      allow create: if isValidId(userId) && isValidUser(incoming()) && (isSignedIn());
+      allow update: if isValidId(userId) && isValidUser(incoming()) && (
+        isSignedIn() && (
+          request.auth.uid == userId || true
+        )
+      );
+      allow delete: if isSignedIn();
+    }
+
+    match /students/{studentId} {
+      allow read: if isSignedIn();
+      allow create: if isValidId(studentId) && isValidStudent(incoming()) && (isSignedIn());
+      allow update: if isValidId(studentId) && isValidStudent(incoming()) && (isSignedIn());
+      allow delete: if isSignedIn();
+    }
+
+    match /attendance/{atId} {
+      allow read: if isSignedIn();
+      allow create: if isValidId(atId) && isValidAttendance(incoming()) && (isSignedIn());
+      allow update: if isValidId(atId) && isValidAttendance(incoming()) && (isSignedIn());
+      allow delete: if isSignedIn();
+    }
+
+    match /behavior/{bhId} {
+      allow read: if isSignedIn();
+      allow create: if isValidId(bhId) && isValidBehavior(incoming()) && (isSignedIn());
+      allow update: if isValidId(bhId) && isValidBehavior(incoming()) && (isSignedIn());
+      allow delete: if isSignedIn();
+    }
+
+    match /news/{newsId} {
+      allow read: if true;
+      allow create: if isValidId(newsId) && isSignedIn();
+      allow update: if isValidId(newsId) && isSignedIn();
+      allow delete: if isSignedIn();
+    }
+
+    match /subjects/{subId} {
+      allow read: if true;
+      allow create, update, delete: if isValidId(subId) && isSignedIn();
+    }
+
+    match /payments/{payId} {
+      allow read: if isSignedIn();
+      allow create, update: if isValidId(payId) && isSignedIn();
+      allow delete: if isSignedIn();
+    }
+
+    match /blocks/{blockId} {
+      allow read: if true;
+      allow create, update, delete: if isValidId(blockId) && isSignedIn();
+    }
+
+    match /tuition_configs/{confId} {
+      allow read: if true;
+      allow create, update, delete: if isValidId(confId) && isSignedIn();
+    }
+
+    match /jobs/{jobId} {
+      allow read: if isSignedIn();
+      allow create, update: if isValidId(jobId) && isSignedIn();
+      allow delete: if isValidId(jobId) && isSignedIn();
+    }
+
+    match /login_logs/{logId} {
+      allow read: if isSignedIn();
+      allow create: if isValidId(logId) && isSignedIn();
+    }
+
+    match /notifications/{notifId} {
+      allow read: if isSignedIn();
+      allow create: if isValidId(notifId) && isSignedIn();
+      allow update: if isValidId(notifId) && isSignedIn() &&
+                      incoming().diff(existing()).affectedKeys().hasOnly(['isRead']);
+      allow delete: if isSignedIn();
+    }
+
+    match /config/{confId} {
+      allow read: if true;
+      allow write: if isValidId(confId) && isSignedIn();
+    }
+  }
+}

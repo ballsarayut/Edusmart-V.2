@@ -1,0 +1,170 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 3. Path Variable Hardening
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function incoming() {
+      return request.resource.data;
+    }
+    function existing() {
+      return resource.data;
+    }
+    
+    // RBAC Helpers
+    // In this app, users are stored with custom IDs. 
+    // We assume request.auth.uid matches the document ID in 'users' collection 
+    // OR the app logic links them.
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    function hasRole(role) {
+      return isSignedIn() && getUserData().role == role;
+    }
+    function isAdmin() { return hasRole('ADMIN'); }
+    function isTeacher() { return hasRole('TEACHER'); }
+    function isAcademic() { return hasRole('ACADEMIC'); }
+    function isFinance() { return hasRole('FINANCE'); }
+    function isCompany() { return hasRole('COMPANY'); }
+    function isParent() { return hasRole('PARENT'); }
+
+    // --- Entity Validations ---
+
+    function isValidStudent(data) {
+      return data.keys().hasAll(['id', 'studentId', 'name', 'level', 'department', 'room', 'behaviorScore']) &&
+             data.id is string && data.id.size() <= 64 &&
+             data.studentId is string && data.studentId.size() <= 20 &&
+             data.name is string && data.name.size() <= 200 &&
+             data.level is string && data.level.size() <= 50 &&
+             data.department is string && data.department.size() <= 100 &&
+             data.room is string && data.room.size() <= 20 &&
+             data.behaviorScore is number;
+    }
+
+    function isValidAttendance(data) {
+      return data.keys().hasAll(['id', 'studentId', 'date', 'type', 'status', 'timestamp']) &&
+             data.id is string &&
+             data.studentId is string &&
+             data.type in ['MORNING', 'SUBJECT'] &&
+             data.status in ['PRESENT', 'LATE', 'ABSENT', 'BUSINESS_LEAVE', 'SICK_LEAVE'] &&
+             data.date is string &&
+             data.timestamp is string; // App uses ISOStrings
+    }
+
+    function isValidBehavior(data) {
+      return data.keys().hasAll(['id', 'studentId', 'type', 'score', 'reason', 'date', 'recordedBy']) &&
+             data.id is string &&
+             data.studentId is string &&
+             data.type in ['ADD', 'DEDUCT'] &&
+             data.score is number &&
+             data.reason is string &&
+             data.date is string &&
+             data.recordedBy is string;
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['id', 'name', 'role', 'username', 'password']) &&
+             data.role in ['ADMIN', 'TEACHER', 'PARENT', 'FINANCE', 'ACADEMIC', 'COMPANY'];
+    }
+
+    // --- Rules ---
+
+    match /users/{userId} {
+      allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isValidId(userId) && isValidUser(incoming()) && (isAdmin() || (isSignedIn() && request.auth.uid == userId));
+      allow update: if isValidId(userId) && isValidUser(incoming()) && (
+        isAdmin() || 
+        (isSignedIn() && request.auth.uid == userId && 
+         incoming().role == existing().role && // Prevent self-elevation
+         incoming().diff(existing()).affectedKeys().hasOnly(['name', 'password', 'username', 'department', 'studentId', 'companyName', 'firebaseUid']))
+      );
+      allow delete: if isAdmin();
+    }
+
+    match /students/{studentId} {
+      allow read: if isSignedIn();
+      allow create: if isValidId(studentId) && isValidStudent(incoming()) && (isAdmin() || isAcademic());
+      allow update: if isValidId(studentId) && isValidStudent(incoming()) && (
+        isAdmin() || isAcademic() || (isTeacher() && incoming().diff(existing()).affectedKeys().hasOnly(['behaviorScore']))
+      );
+      allow delete: if isAdmin();
+    }
+
+    match /attendance/{atId} {
+      allow read: if isSignedIn();
+      allow create: if isValidId(atId) && isValidAttendance(incoming()) && (isAdmin() || isTeacher() || isAcademic());
+      allow update: if isValidId(atId) && isValidAttendance(incoming()) && (isAdmin() || isTeacher() || isAcademic());
+      allow delete: if isAdmin();
+    }
+
+    match /behavior/{bhId} {
+      allow read: if isSignedIn();
+      allow create: if isValidId(bhId) && isValidBehavior(incoming()) && (isAdmin() || isTeacher());
+      allow update: if isValidId(bhId) && isValidBehavior(incoming()) && (isAdmin() || isTeacher());
+      allow delete: if isAdmin();
+    }
+
+    match /news/{newsId} {
+      allow read: if isSignedIn();
+      allow create: if isValidId(newsId) && (isAdmin() || isAcademic());
+      allow update: if isValidId(newsId) && (isAdmin() || isAcademic());
+      allow delete: if isAdmin() || isAcademic();
+    }
+
+    match /subjects/{subId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isValidId(subId) && (isAdmin() || isAcademic());
+    }
+
+    match /payments/{payId} {
+      allow read: if isSignedIn() && (isAdmin() || isFinance() || isParent());
+      allow create, update: if isValidId(payId) && (isAdmin() || isFinance());
+      allow delete: if isAdmin();
+    }
+
+    match /blocks/{blockId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isValidId(blockId) && (isAdmin() || isAcademic());
+    }
+
+    match /tuition_configs/{confId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isValidId(confId) && (isAdmin() || isFinance() || isAcademic());
+    }
+
+    match /jobs/{jobId} {
+      allow read: if isSignedIn();
+      allow create, update: if isValidId(jobId) && (isAdmin() || isCompany());
+      allow delete: if isAdmin() || isCompany();
+    }
+
+    match /login_logs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isValidId(logId) && isSignedIn();
+    }
+
+    match /notifications/{notifId} {
+      allow read: if isSignedIn() && (isAdmin() || getUserData().studentId == resource.data.studentId);
+      allow create: if isValidId(notifId) && (isAdmin() || isTeacher() || isAcademic());
+      allow update: if isValidId(notifId) && isSignedIn() && getUserData().studentId == resource.data.studentId && 
+                      incoming().diff(existing()).affectedKeys().hasOnly(['isRead']);
+      allow delete: if isAdmin();
+    }
+
+    match /config/{confId} {
+      allow read: if isSignedIn();
+      allow write: if isValidId(confId) && isAdmin();
+    }
+  }
+}
+
