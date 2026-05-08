@@ -99,22 +99,22 @@ service cloud.firestore {
 
     match /students/{studentId} {
       allow read: if true;
-      allow create: if isValidId(studentId) && isValidStudent(incoming()) && (isSignedIn());
-      allow update: if isValidId(studentId) && isValidStudent(incoming()) && (isSignedIn());
+      allow create: if isValidId(studentId) && isValidStudent(incoming());
+      allow update: if isValidId(studentId) && isValidStudent(incoming());
       allow delete: if isSignedIn();
     }
 
     match /attendance/{atId} {
-      allow read: if isSignedIn();
-      allow create: if isValidId(atId) && isValidAttendance(incoming()) && (isSignedIn());
-      allow update: if isValidId(atId) && isValidAttendance(incoming()) && (isSignedIn());
+      allow read: if true;
+      allow create: if isValidId(atId) && isValidAttendance(incoming());
+      allow update: if isValidId(atId) && isValidAttendance(incoming());
       allow delete: if isSignedIn();
     }
 
     match /behavior/{bhId} {
-      allow read: if isSignedIn();
-      allow create: if isValidId(bhId) && isValidBehavior(incoming()) && (isSignedIn());
-      allow update: if isValidId(bhId) && isValidBehavior(incoming()) && (isSignedIn());
+      allow read: if true;
+      allow create: if isValidId(bhId) && isValidBehavior(incoming());
+      allow update: if isValidId(bhId) && isValidBehavior(incoming());
       allow delete: if isSignedIn();
     }
 
@@ -131,8 +131,8 @@ service cloud.firestore {
     }
 
     match /payments/{payId} {
-      allow read: if isSignedIn();
-      allow create, update: if isValidId(payId) && isSignedIn();
+      allow read: if true;
+      allow create, update: if isValidId(payId);
       allow delete: if isSignedIn();
     }
 
@@ -147,20 +147,20 @@ service cloud.firestore {
     }
 
     match /jobs/{jobId} {
-      allow read: if isSignedIn();
-      allow create, update: if isValidId(jobId) && isSignedIn();
+      allow read: if true;
+      allow create, update: if isValidId(jobId);
       allow delete: if isValidId(jobId) && isSignedIn();
     }
 
     match /login_logs/{logId} {
-      allow read: if isSignedIn();
-      allow create: if isValidId(logId) && isSignedIn();
+      allow read: if true;
+      allow create: if isValidId(logId);
     }
 
     match /notifications/{notifId} {
-      allow read: if isSignedIn();
-      allow create: if isValidId(notifId) && isSignedIn();
-      allow update: if isValidId(notifId) && isSignedIn() &&
+      allow read: if true;
+      allow create: if isValidId(notifId);
+      allow update: if isValidId(notifId) &&
                       incoming().diff(existing()).affectedKeys().hasOnly(['isRead']);
       allow delete: if isSignedIn();
     }

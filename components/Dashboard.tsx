@@ -544,7 +544,31 @@ const Dashboard: React.FC<DashboardProps> = ({
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
-        <StatCard title="จำนวนนักเรียน" value={filteredStudents.length} sub="ในตัวกรองปัจจุบัน" icon={<Users />} color="bg-slate-900" />
+        <div className="bg-white p-5 md:p-7 rounded-[28px] border border-slate-200 shadow-sm flex flex-col hover:shadow-md transition-all group overflow-hidden h-full relative">
+          <div className="flex items-start justify-between w-full mb-2">
+            <div className="space-y-1.5 flex-1">
+              <p className="text-slate-500 text-[9px] font-extrabold uppercase tracking-widest font-heading flex items-center gap-2">
+                จำนวนนักเรียน
+                {students.length === 0 && (
+                  <span className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse" />
+                )}
+              </p>
+              <h3 className="text-3xl md:text-4xl font-black text-slate-900 font-heading">
+                {filteredStudents.length}
+              </h3>
+              <p className="text-[10px] text-slate-400 font-bold">ในตัวกรองปัจจุบัน</p>
+            </div>
+            <div className="p-3 rounded-2xl bg-slate-900 text-white shadow-lg shrink-0">
+              <Users size={20} />
+            </div>
+          </div>
+          <div className="mt-4 pt-4 border-t border-slate-50 flex items-center justify-between">
+             <span className="text-[8px] font-black uppercase text-slate-400">Cloud Sync:</span>
+             <span className={`text-[8px] font-black uppercase ${students.length > 0 ? 'text-green-600' : 'text-amber-600'}`}>
+               {students.length > 0 ? `พบ ${students.length} รายชื่อ` : 'กำลังเชื่อมต่อ...'}
+             </span>
+          </div>
+        </div>
         <StatCard title="เฝ้าระวังพฤติกรรม" value={behaviorWatchlist.length} sub="คะแนนต่ำกว่า 70" icon={<ShieldAlert />} color="bg-red-600" textColor="text-red-600" />
         <StatCard title="เฝ้าระวังเข้าแถว" value={attendanceWatchlist.length} sub="คะแนนต่ำกว่า 3.0" icon={<Sun />} color="bg-[#00AEEF]" textColor="text-[#00AEEF]" />
         <StatCard title="มาสายวันนี้" value={(attendance || []).filter(a => a.date === new Date().toISOString().split('T')[0] && a.status === 'LATE' && a.type === 'MORNING').length} sub="เข้าแถวหลัง 07:50 น." icon={<Clock />} color="bg-amber-500" textColor="text-amber-600" />

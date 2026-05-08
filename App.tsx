@@ -162,64 +162,39 @@ const App: React.FC = () => {
       }
     });
 
-    // PRIVATE COLLECTIONS
-    let unsubStudents = () => {};
-    let unsubAttendance = () => {};
-    let unsubBehavior = () => {};
-    let unsubPayments = () => {};
-    let unsubUsers = () => {};
-
-    if (firebaseUser) {
-      console.log("Firebase user detected, starting subscriptions...", firebaseUser.uid);
-      setIsSyncingWithCloud(true);
-      unsubStudents = syncCollection<Student>('students', (data) => {
-        console.log(`Synced ${data.length} students from cloud`);
+    // CORE COLLECTIONS SYNC (Now accessible without auth for better device sync)
+    const unsubStudents = syncCollection<Student>('students', (data) => {
+      console.log(`Synced ${data.length} students from cloud`);
+      if (data.length > 0) {
+        setStudents(data);
+        setIsStudentsLoaded(true);
+      } else if (isFirebaseReady) {
+        // Cloud is empty, use MOCK as fallback for local view
+        setStudents(MOCK_STUDENTS);
+        setIsStudentsLoaded(true);
         
-        if (data.length > 0) {
-          setStudents(data);
-          setIsStudentsLoaded(true);
-        } else {
-          // Cloud is empty, use MOCK as fallback for local view
-          console.log("Cloud is empty, using MOCK_STUDENTS as local view");
-          setStudents(MOCK_STUDENTS);
-          setIsStudentsLoaded(true);
-          
-          // Try to seed cloud if we have permissions
-          const lastAttempt = localStorage.getItem('last_seed_attempt');
-          const now = Date.now();
-          if (!lastAttempt || now - parseInt(lastAttempt) > 300000) {
-            console.log("Attempting to seed Cloud from MOCK_STUDENTS...");
-            localStorage.setItem('last_seed_attempt', now.toString());
-            saveMultipleToFirestore('students', MOCK_STUDENTS)
-              .then(() => console.log("Seeding complete"))
-              .catch(err => console.warn("Seed skipped: Authentication/Permissions restricted.", err));
-          }
+        // Try to seed cloud if we have permissions
+        const lastAttempt = localStorage.getItem('last_seed_attempt');
+        const now = Date.now();
+        if (!lastAttempt || now - parseInt(lastAttempt) > 300000) {
+          localStorage.setItem('last_seed_attempt', now.toString());
+          saveMultipleToFirestore('students', MOCK_STUDENTS)
+            .catch(err => console.warn("Seed skipped: ", err));
         }
-        setIsSyncingWithCloud(false);
-      });
+      }
+      setIsSyncingWithCloud(false);
+    });
 
-      unsubAttendance = syncCollection<AttendanceRecord>('attendance', setAttendance);
-      unsubBehavior = syncCollection<BehaviorRecord>('behavior', setBehaviorRecords);
-      unsubPayments = syncCollection<PaymentRecord>('payments', setPaymentRecords);
+    const unsubAttendance = syncCollection<AttendanceRecord>('attendance', setAttendance);
+    const unsubBehavior = syncCollection<BehaviorRecord>('behavior', setBehaviorRecords);
+    const unsubPayments = syncCollection<PaymentRecord>('payments', setPaymentRecords);
+    
+    // AUTH-DEPENDENT COLLECTIONS
+    let unsubUsers = () => {};
+    if (firebaseUser) {
       unsubUsers = syncCollection<User>('users', (data) => {
         if (data.length > 0) setSystemUsers(data);
-        else if (firebaseUser) {
-          saveMultipleToFirestore('users', [
-            { id: 'A1', name: 'แอดมิน ระบบ', role: 'ADMIN', username: 'admin', password: '1234', department: 'ส่วนกลาง' },
-            { id: 'AC1', name: 'หัวหน้างานฝ่ายวิชาการ', role: 'ACADEMIC', username: 'academic', password: '1234', department: 'งานวิชาการ' },
-            { id: 'T1', name: 'อ.สมพงษ์ ใจสว่าง', role: 'TEACHER', username: 'teacher', password: '1234', department: 'เทคโนโลยีสารสนเทศ' },
-            { id: 'C1', name: 'บจก. นวัตกรรมซอฟต์แวร์', role: 'COMPANY', username: 'company', password: '1234', companyName: 'บริษัท นวัตกรรมซอฟต์แวร์ จำกัด' },
-            { id: 'F1', name: 'ฝ่ายการเงิน', role: 'FINANCE', username: 'finance', password: '1234', department: 'ฝ่ายการเงิน' },
-            { id: 'P1', name: 'คุณแม่ของนายสมชาย', role: 'PARENT', username: 'parent', password: '1234', studentId: '1' }
-          ]);
-        }
       });
-    } else if (isFirebaseReady) {
-      // Fallback for when not logged in or auth failed (e.g. anon disabled)
-      console.log("Using local fallback data (Not authenticated)");
-      setStudents(MOCK_STUDENTS);
-      setIsStudentsLoaded(true);
-      setIsSyncingWithCloud(false);
     }
 
     return () => {
