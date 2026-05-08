@@ -45,7 +45,8 @@ const App: React.FC = () => {
   const [isFirebaseReady, setIsFirebaseReady] = useState(false);
   const [firebaseUser, setFirebaseUser] = useState<any>(null);
 
-  const [students, setStudents] = useState<Student[]>(MOCK_STUDENTS);
+  const [students, setStudents] = useState<Student[]>([]);
+  const [isStudentsLoaded, setIsStudentsLoaded] = useState(false);
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [behaviorRecords, setBehaviorRecords] = useState<BehaviorRecord[]>([]);
   const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
@@ -151,11 +152,20 @@ const App: React.FC = () => {
     let unsubUsers = () => {};
 
     if (firebaseUser) {
+      setIsSyncingWithCloud(true);
       unsubStudents = syncCollection<Student>('students', (data) => {
+        setStudents(data);
+        setIsStudentsLoaded(true);
+        setIsSyncingWithCloud(false);
+        
+        // Auto-seed if empty (only if we're sure it should be)
         if (data.length === 0) {
-          saveMultipleToFirestore('students', MOCK_STUDENTS);
+           const hasSeeded = localStorage.getItem('seeded_students_v1');
+           if (!hasSeeded) {
+             saveMultipleToFirestore('students', MOCK_STUDENTS);
+             localStorage.setItem('seeded_students_v1', 'true');
+           }
         }
-        if (data.length > 0) setStudents(data);
       });
 
       unsubAttendance = syncCollection<AttendanceRecord>('attendance', setAttendance);
@@ -256,7 +266,7 @@ const App: React.FC = () => {
       case 'job_portal': return <JobPortal currentUser={user} students={students} />; 
       case 'broadcast': return <NewsBroadcast students={students} news={news} setNews={(val) => { setNews(val); }} currentUser={user} />;
       case 'quick_scan': return <QuickScan students={students} attendanceRecords={attendance} setAttendanceRecords={setAttendance} />;
-      case 'students': return <StudentManagement students={students} setStudents={setStudents} />;
+      case 'students': return <StudentManagement students={students} setStudents={setStudents} isSyncing={isSyncingWithCloud} />;
       case 'morning': return <MorningAttendance students={students} setStudents={setStudents} attendanceRecords={attendance} setAttendanceRecords={setAttendance} rooms={rooms} setRooms={setRooms} />;
       case 'subject': return <ClassAttendance students={students} setStudents={setStudents} subjects={subjects} setSubjects={setSubjects} rooms={rooms} setRooms={setRooms} attendanceRecords={attendance} setAttendanceRecords={setAttendance} currentUser={user} />;
       case 'behavior': return <BehaviorSystem students={students} setStudents={setStudents} behaviorRecords={behaviorRecords} setBehaviorRecords={setBehaviorRecords} />;
