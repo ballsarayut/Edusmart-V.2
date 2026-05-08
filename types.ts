@@ -160,6 +160,19 @@ export interface StudyBlock {
   examTime?: string; 
 }
 
+export interface Application {
+  id: string;
+  jobId: string;
+  jobTitle: string;
+  studentId: string;
+  studentName: string;
+  studentLevel: string;
+  studentDept: string;
+  message: string;
+  timestamp: string;
+  status: 'PENDING' | 'VIEWED';
+}
+
 export interface SystemConfig {
   morningTimeLimit: string;
   scanMode: 'BARCODE_SCANNER' | 'CAMERA';

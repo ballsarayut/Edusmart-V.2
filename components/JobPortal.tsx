@@ -1,6 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { JobAnnouncement, User, Student } from '../types';
+import { JobAnnouncement, User, Student, Application } from '../types';
+import { saveToFirestore, deleteFromFirestore } from '../firebaseService';
 import { 
   Briefcase, Plus, Search, Building2, MapPin, 
   Banknote, Phone, Calendar, Trash2, X, Send, 
@@ -8,43 +9,23 @@ import {
   UserCircle, FileText, Mail, ChevronRight, Inbox
 } from 'lucide-react';
 
-interface Application {
-  id: string;
-  jobId: string;
-  jobTitle: string;
-  studentId: string;
-  studentName: string;
-  studentLevel: string;
-  studentDept: string;
-  message: string;
-  timestamp: string;
-  status: 'PENDING' | 'VIEWED';
-}
-
 interface JobPortalProps {
   currentUser: User;
   students?: Student[];
+  jobs: JobAnnouncement[];
+  setJobs: React.Dispatch<React.SetStateAction<JobAnnouncement[]>>;
+  applications: Application[];
+  setApplications: React.Dispatch<React.SetStateAction<Application[]>>;
 }
 
-const JobPortal: React.FC<JobPortalProps> = ({ currentUser, students = [] }) => {
-  const [jobs, setJobs] = useState<JobAnnouncement[]>([
-    {
-      id: 'J1',
-      type: 'INTERNSHIP',
-      title: 'นักศึกษาฝึกงาน แผนก IT Support',
-      companyName: 'บริษัท เทคโนโลยีล้ำสมัย จำกัด',
-      description: 'ดูแลระบบ Network และซ่อมบำรุงคอมพิวเตอร์เบื้องต้นภายในสำนักงาน ร่วมโปรเจกต์พัฒนาระบบคลาวด์ของบริษัท และเรียนรู้การทำงานร่วมกับทีมวิศวกรซอฟต์แวร์มืออาชีพ',
-      location: 'อ.เมือง จ.สุราษฎร์ธานี',
-      salary: '300 - 500 บาท/วัน',
-      contact: '081-234-5678 (คุณสมศักดิ์)',
-      date: '20/05/2567',
-      timestamp: new Date().toISOString(),
-      postedBy: 'SYSTEM',
-      tags: ['IT', 'Network', 'Hardware']
-    }
-  ]);
-
-  const [applications, setApplications] = useState<Application[]>([]);
+const JobPortal: React.FC<JobPortalProps> = ({ 
+  currentUser, 
+  students = [], 
+  jobs, 
+  setJobs, 
+  applications, 
+  setApplications 
+}) => {
   const [activeView, setActiveView] = useState<'EXPLORE' | 'APPLICATIONS'>(
     currentUser.role === 'COMPANY' ? 'APPLICATIONS' : 'EXPLORE'
   );
@@ -56,12 +37,6 @@ const JobPortal: React.FC<JobPortalProps> = ({ currentUser, students = [] }) => 
   const [filterType, setFilterType] = useState<'ALL' | 'JOB' | 'INTERNSHIP'>('ALL');
   const [isPosting, setIsPosting] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
-
-  // Load applications from localStorage on mount
-  useEffect(() => {
-    const savedApps = localStorage.getItem('cms_job_apps');
-    if (savedApps) setApplications(JSON.parse(savedApps));
-  }, []);
 
   const [formData, setFormData] = useState<Partial<JobAnnouncement>>({
     type: 'JOB',
@@ -116,6 +91,8 @@ const JobPortal: React.FC<JobPortalProps> = ({ currentUser, students = [] }) => 
     };
 
     setJobs(prev => [newJob, ...prev]);
+    saveToFirestore('jobs', newJob);
+    
     setIsPosting(false);
     setShowPostModal(false);
     setFormData({ type: 'JOB', title: '', description: '', location: '', salary: '', contact: '' });
@@ -145,7 +122,7 @@ const JobPortal: React.FC<JobPortalProps> = ({ currentUser, students = [] }) => 
 
     const updatedApps = [newApp, ...applications];
     setApplications(updatedApps);
-    localStorage.setItem('cms_job_apps', JSON.stringify(updatedApps));
+    saveToFirestore('applications', newApp);
 
     setIsApplying(false);
     setApplyingJob(null);
@@ -156,6 +133,7 @@ const JobPortal: React.FC<JobPortalProps> = ({ currentUser, students = [] }) => 
   const deleteJob = (id: string) => {
     if (confirm('ยืนยันการลบประกาศนี้?')) {
       setJobs(prev => prev.filter(j => j.id !== id));
+      deleteFromFirestore('jobs', id);
     }
   };
 

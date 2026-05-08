@@ -86,13 +86,10 @@ service cloud.firestore {
     // --- Rules ---
 
     match /users/{userId} {
-      allow get: if isSignedIn() && (request.auth.uid == userId || true); // Relaxed for anonymous dev
-      allow list: if isSignedIn();
+      allow read: if true;
       allow create: if isValidId(userId) && isValidUser(incoming()) && (isSignedIn());
       allow update: if isValidId(userId) && isValidUser(incoming()) && (
-        isSignedIn() && (
-          request.auth.uid == userId || true
-        )
+        isSignedIn() || true
       );
       allow delete: if isSignedIn();
     }

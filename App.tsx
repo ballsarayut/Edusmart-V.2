@@ -76,6 +76,8 @@ const App: React.FC = () => {
   const [tuitionConfigs, setTuitionConfigs] = useState<TuitionConfig[]>([]);
   const [paymentRecords, setPaymentRecords] = useState<PaymentRecord[]>([]);
   const [studyBlocks, setStudyBlocks] = useState<StudyBlock[]>(MOCK_STUDY_BLOCKS);
+  const [jobAnnouncements, setJobAnnouncements] = useState<JobAnnouncement[]>([]);
+  const [jobApplications, setJobApplications] = useState<Application[]>([]);
 
   // Sync state to cloud helper
   const syncToCloud = async (type: string, data: any) => {
@@ -188,13 +190,17 @@ const App: React.FC = () => {
     const unsubAttendance = syncCollection<AttendanceRecord>('attendance', setAttendance);
     const unsubBehavior = syncCollection<BehaviorRecord>('behavior', setBehaviorRecords);
     const unsubPayments = syncCollection<PaymentRecord>('payments', setPaymentRecords);
+    const unsubNotifications = syncCollection<NotificationRecord>('notifications', setNotifications);
+    const unsubJobs = syncCollection<JobAnnouncement>('jobs', setJobAnnouncements);
+    const unsubApplications = syncCollection<Application>('applications', setJobApplications);
+    const unsubUsers = syncCollection<User>('users', (data) => {
+      if (data.length > 0) setSystemUsers(data);
+    });
+    const unsubLogs = syncCollection<LoginLog>('login_logs', setLoginLogs);
     
     // AUTH-DEPENDENT COLLECTIONS
-    let unsubUsers = () => {};
     if (firebaseUser) {
-      unsubUsers = syncCollection<User>('users', (data) => {
-        if (data.length > 0) setSystemUsers(data);
-      });
+      // Add any specifically authenticated syncs here if needed
     }
 
     return () => {
@@ -206,9 +212,35 @@ const App: React.FC = () => {
       unsubAttendance();
       unsubBehavior();
       unsubPayments();
+      unsubNotifications();
+      unsubJobs();
+      unsubApplications();
       unsubUsers();
+      unsubLogs();
     };
   }, [isFirebaseReady, firebaseUser]);
+
+  useEffect(() => {
+    if (!isFirebaseReady || !user?.id) return;
+
+    // Listen to changes for the currently logged-in user profile
+    const unsubscribe = syncCollection<User>('users', (data) => {
+      const latestMe = data.find(u => u.id === user.id);
+      if (latestMe) {
+        // Compare to prevent infinite loop
+        if (JSON.stringify(latestMe) !== JSON.stringify(user)) {
+          setUser(latestMe);
+          if (localStorage.getItem('edusmart_user')) {
+            localStorage.setItem('edusmart_user', JSON.stringify(latestMe));
+          } else {
+            sessionStorage.setItem('edusmart_user', JSON.stringify(latestMe));
+          }
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, [isFirebaseReady, user?.id]);
 
   useEffect(() => {
     // Audit logs remain local
@@ -274,7 +306,14 @@ const App: React.FC = () => {
   const renderContent = () => {
     switch (activeMenu) {
       case 'dashboard': return <Dashboard students={students} attendance={attendance} behavior={behaviorRecords} news={news} notifications={notifications} user={user} studyBlocks={studyBlocks} tuitionConfigs={tuitionConfigs} paymentRecords={paymentRecords} />;
-      case 'job_portal': return <JobPortal currentUser={user} students={students} />; 
+      case 'job_portal': return <JobPortal 
+                                    currentUser={user} 
+                                    students={students} 
+                                    jobs={jobAnnouncements}
+                                    setJobs={setJobAnnouncements}
+                                    applications={jobApplications}
+                                    setApplications={setJobApplications}
+                                  />; 
       case 'broadcast': return <NewsBroadcast students={students} news={news} setNews={(val) => { setNews(val); }} currentUser={user} />;
       case 'quick_scan': return <QuickScan students={students} attendanceRecords={attendance} setAttendanceRecords={setAttendance} />;
       case 'students': return <StudentManagement students={students} setStudents={setStudents} isSyncing={isSyncingWithCloud} isLoading={!isStudentsLoaded} />;
