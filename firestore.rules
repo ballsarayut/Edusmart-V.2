@@ -87,66 +87,57 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if true;
-      allow create: if isValidId(userId) && isValidUser(incoming()) && (isSignedIn());
-      allow update: if isValidId(userId) && isValidUser(incoming()) && (
-        isSignedIn() || true
-      );
-      allow delete: if isSignedIn();
+      allow create, update, delete: if isValidId(userId);
     }
 
     match /students/{studentId} {
       allow read: if true;
-      allow create: if isValidId(studentId) && isValidStudent(incoming());
-      allow update: if isValidId(studentId) && isValidStudent(incoming());
-      allow delete: if isSignedIn();
+      allow create, update, delete: if isValidId(studentId);
     }
 
     match /attendance/{atId} {
       allow read: if true;
-      allow create: if isValidId(atId) && isValidAttendance(incoming());
-      allow update: if isValidId(atId) && isValidAttendance(incoming());
-      allow delete: if isSignedIn();
+      allow create, update, delete: if isValidId(atId);
     }
 
     match /behavior/{bhId} {
       allow read: if true;
-      allow create: if isValidId(bhId) && isValidBehavior(incoming());
-      allow update: if isValidId(bhId) && isValidBehavior(incoming());
-      allow delete: if isSignedIn();
+      allow create, update, delete: if isValidId(bhId);
     }
 
     match /news/{newsId} {
       allow read: if true;
-      allow create: if isValidId(newsId) && isSignedIn();
-      allow update: if isValidId(newsId) && isSignedIn();
-      allow delete: if isSignedIn();
+      allow create, update, delete: if isValidId(newsId);
     }
 
     match /subjects/{subId} {
       allow read: if true;
-      allow create, update, delete: if isValidId(subId) && isSignedIn();
+      allow create, update, delete: if isValidId(subId);
     }
 
     match /payments/{payId} {
       allow read: if true;
-      allow create, update: if isValidId(payId);
-      allow delete: if isSignedIn();
+      allow create, update, delete: if isValidId(payId);
     }
 
     match /blocks/{blockId} {
       allow read: if true;
-      allow create, update, delete: if isValidId(blockId) && isSignedIn();
+      allow create, update, delete: if isValidId(blockId);
     }
 
     match /tuition_configs/{confId} {
       allow read: if true;
-      allow create, update, delete: if isValidId(confId) && isSignedIn();
+      allow create, update, delete: if isValidId(confId);
     }
 
     match /jobs/{jobId} {
       allow read: if true;
-      allow create, update: if isValidId(jobId);
-      allow delete: if isValidId(jobId) && isSignedIn();
+      allow create, update, delete: if isValidId(jobId);
+    }
+
+    match /applications/{appId} {
+      allow read: if true;
+      allow create, update, delete: if isValidId(appId);
     }
 
     match /login_logs/{logId} {
@@ -156,15 +147,12 @@ service cloud.firestore {
 
     match /notifications/{notifId} {
       allow read: if true;
-      allow create: if isValidId(notifId);
-      allow update: if isValidId(notifId) &&
-                      incoming().diff(existing()).affectedKeys().hasOnly(['isRead']);
-      allow delete: if isSignedIn();
+      allow create, update, delete: if isValidId(notifId);
     }
 
     match /config/{confId} {
       allow read: if true;
-      allow write: if isValidId(confId) && isSignedIn();
+      allow write: if isValidId(confId);
     }
   }
 }

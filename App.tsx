@@ -23,7 +23,7 @@ import NewsBroadcast from './components/NewsBroadcast';
 import AuditLogs from './components/AuditLogs';
 import JobPortal from './components/JobPortal'; 
 import Login from './components/Login';
-import { MOCK_STUDENTS, MOCK_ATTENDANCE, MOCK_BEHAVIOR, MOCK_SUBJECTS, MOCK_STUDY_BLOCKS, MOCK_TUITION_CONFIGS } from './data/mockData';
+import { MOCK_STUDENTS, MOCK_ATTENDANCE, MOCK_BEHAVIOR, MOCK_SUBJECTS, MOCK_STUDY_BLOCKS, MOCK_TUITION_CONFIGS, MOCK_USERS } from './data/mockData';
 import { Student, AttendanceRecord, BehaviorRecord, Subject, User, StudyBlock, TuitionConfig, PaymentRecord, NotificationRecord, NewsRecord, LoginLog } from './types';
 
 const App: React.FC = () => {
@@ -65,14 +65,7 @@ const App: React.FC = () => {
   ]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [rooms, setRooms] = useState<string[]>(['1', '2', '3']);
-  const [systemUsers, setSystemUsers] = useState<User[]>([
-    { id: 'A1', name: 'แอดมิน ระบบ', role: 'ADMIN', username: 'admin', password: '1234', department: 'ส่วนกลาง' },
-    { id: 'AC1', name: 'หัวหน้างานฝ่ายวิชาการ', role: 'ACADEMIC', username: 'academic', password: '1234', department: 'งานวิชาการ' },
-    { id: 'T1', name: 'อ.สมพงษ์ ใจสว่าง', role: 'TEACHER', username: 'teacher', password: '1234', department: 'เทคโนโลยีสารสนเทศ' },
-    { id: 'C1', name: 'บจก. นวัตกรรมซอฟต์แวร์', role: 'COMPANY', username: 'company', password: '1234', companyName: 'บริษัท นวัตกรรมซอฟต์แวร์ จำกัด' },
-    { id: 'F1', name: 'ฝ่ายการเงิน', role: 'FINANCE', username: 'finance', password: '1234', department: 'ฝ่ายการเงิน' },
-    { id: 'P1', name: 'คุณแม่ของนายสมชาย', role: 'PARENT', username: 'parent', password: '1234', studentId: '1' }
-  ]);
+  const [systemUsers, setSystemUsers] = useState<User[]>(MOCK_USERS);
   const [tuitionConfigs, setTuitionConfigs] = useState<TuitionConfig[]>([]);
   const [paymentRecords, setPaymentRecords] = useState<PaymentRecord[]>([]);
   const [studyBlocks, setStudyBlocks] = useState<StudyBlock[]>(MOCK_STUDY_BLOCKS);
@@ -127,12 +120,16 @@ const App: React.FC = () => {
 
     // PUBLIC COLLECTIONS
     const unsubNews = syncCollection<NewsRecord>('news', (data) => {
-      setNews(data);
+      if (data.length > 0) setNews(data);
+      else if (isFirebaseReady) {
+        // Fallback to local logic if needed, or just let it be empty
+      }
     });
 
     const unsubSubjects = syncCollection<Subject>('subjects', (data) => {
       if (data.length > 0) setSubjects(data);
       else if (isFirebaseReady) {
+         setSubjects(MOCK_SUBJECTS);
          const hasSeeded = localStorage.getItem('seeded_subjects');
          if (!hasSeeded) {
            saveMultipleToFirestore('subjects', MOCK_SUBJECTS);
@@ -144,6 +141,7 @@ const App: React.FC = () => {
     const unsubBlocks = syncCollection<StudyBlock>('blocks', (data) => {
       if (data.length > 0) setStudyBlocks(data);
       else if (isFirebaseReady) {
+         setStudyBlocks(MOCK_STUDY_BLOCKS);
          const hasSeeded = localStorage.getItem('seeded_blocks');
          if (!hasSeeded) {
            saveMultipleToFirestore('blocks', MOCK_STUDY_BLOCKS);
@@ -157,7 +155,7 @@ const App: React.FC = () => {
       else if (isFirebaseReady) {
          setTuitionConfigs(MOCK_TUITION_CONFIGS);
          const hasSeeded = localStorage.getItem('seeded_tuition');
-         if (!hasSeeded && firebaseUser) {
+         if (!hasSeeded) {
            saveMultipleToFirestore('tuition_configs', MOCK_TUITION_CONFIGS);
            localStorage.setItem('seeded_tuition', 'true');
          }
@@ -175,13 +173,15 @@ const App: React.FC = () => {
         setStudents(MOCK_STUDENTS);
         setIsStudentsLoaded(true);
         
-        // Try to seed cloud if we have permissions
+        // Try to seed cloud regardless of firebaseUser presence (using anon auth)
         const lastAttempt = localStorage.getItem('last_seed_attempt');
         const now = Date.now();
         if (!lastAttempt || now - parseInt(lastAttempt) > 300000) {
           localStorage.setItem('last_seed_attempt', now.toString());
+          console.log("Seeding mock students to cloud...");
           saveMultipleToFirestore('students', MOCK_STUDENTS)
-            .catch(err => console.warn("Seed skipped: ", err));
+            .then(() => console.log("Seeding successful"))
+            .catch(err => console.error("Seeding failed: ", err));
         }
       }
       setIsSyncingWithCloud(false);
@@ -193,8 +193,22 @@ const App: React.FC = () => {
     const unsubNotifications = syncCollection<NotificationRecord>('notifications', setNotifications);
     const unsubJobs = syncCollection<JobAnnouncement>('jobs', setJobAnnouncements);
     const unsubApplications = syncCollection<Application>('applications', setJobApplications);
+    
+    // USERS SYNC with Seeding
     const unsubUsers = syncCollection<User>('users', (data) => {
-      if (data.length > 0) setSystemUsers(data);
+      setSystemUsers(data.length > 0 ? data : MOCK_USERS);
+      
+      // One-time forced update for the new user list from image
+      const updateKey = 'force_update_users_may_2024_v4';
+      if (isFirebaseReady && !localStorage.getItem(updateKey)) {
+        console.log("Forcing one-time user list update to cloud...");
+        saveMultipleToFirestore('users', MOCK_USERS)
+          .then(() => {
+            localStorage.setItem(updateKey, 'true');
+            console.log("User list update successful.");
+          })
+          .catch(err => console.error("User list update failed:", err));
+      }
     });
     const unsubLogs = syncCollection<LoginLog>('login_logs', setLoginLogs);
     

@@ -1,5 +1,40 @@
 
-import { Student, Subject, AttendanceRecord, BehaviorRecord, ThaiLevel, Department, StudyBlock } from '../types';
+import { Student, Subject, AttendanceRecord, BehaviorRecord, ThaiLevel, Department, StudyBlock, User } from '../types';
+
+export const MOCK_USERS: User[] = [
+  { id: 'admin', name: 'ผู้ดูแลระบบ', role: 'ADMIN', username: 'admin', password: '1234', department: 'ส่วนกลาง' },
+  { id: 'u1', name: 'นายชนะ กฤตานนพงศ์', role: 'TEACHER', username: 'kitchana.5364@gmail.com', password: '1234', department: 'เทคโนโลยีสารสนเทศ' },
+  { id: 'u2', name: 'นายปิยะพงษ์ รอดนาโพธิ์', role: 'TEACHER', username: 'patumwan5817@gmail.com', password: '1234', department: 'งานวิชาการ' },
+  { id: 'u3', name: 'นางนฤมล เรืองพูน', role: 'TEACHER', username: 'monden6@gmail.com', password: '1234', department: 'บัญชี' },
+  { id: 'u4', name: 'นายภูมเรศ จันทร์แจ่มจรี', role: 'TEACHER', username: 'poomres', password: '2512', department: 'ช่างยนต์' },
+  { id: 'u5', name: 'นางสาวพุทธชาติ จันทลีลา', role: 'TEACHER', username: 'puttachat8184@gmail.com', password: '1234', department: 'ช่างไฟฟ้า' },
+  { id: 'u6', name: 'นายวิบูลย์ศักดิ์ วงษ์แหวน', role: 'TEACHER', username: 'garfill6@gmail.com', password: '1234', department: 'เทคโนโลยีสารสนเทศ' },
+  { id: 'u7', name: 'นางเสาวณีย์ ชุมศรี', role: 'TEACHER', username: 'saowanee19781@gmail.com', password: '1234', department: 'การตลาด' },
+  { id: 'u8', name: 'นางกนกวรรณ ธนาพล', role: 'TEACHER', username: 'kanokwan2567@gmail.com', password: '1234', department: 'บัญชี' },
+  { id: 'u9', name: 'นายเอกราช อาจณรงค์', role: 'TEACHER', username: '7777', password: '7777', department: 'ส่วนกลาง' },
+  { id: 'u10', name: 'นางสาวนฤมล วงษ์แหวน', role: 'TEACHER', username: 'jum25aug2567@gmail.com', password: '1234', department: 'งานวิชาการ' },
+  { id: 'u11', name: 'นายสุมันฑิต ทิพย์มนตรี', role: 'TEACHER', username: 'pope', password: '1234', department: 'คอมพิวเตอร์' },
+  { id: 'u12', name: 'นายนคร คมขำ', role: 'TEACHER', username: 'bow', password: '1234', department: 'บัญชี' },
+  { id: 'u13', name: 'นายฉัตร์ชัย ดิษฐาน', role: 'TEACHER', username: 'chatchai', password: '1234', department: 'ช่างไฟฟ้า' },
+  { id: 'u14', name: 'นางอันธิกา ชายแก้ว', role: 'TEACHER', username: 'Antika', password: '1234', department: 'การตลาด' },
+  { id: 'u15', name: 'นายคัมภีร์ ช่วยเพชร', role: 'TEACHER', username: 'Kumpee', password: '1234', department: 'ช่างยนต์' },
+  { id: 'u16', name: 'นางศริญญา กลการ', role: 'TEACHER', username: 'konlakranning@gmail.com', password: '1234', department: 'สามัญ' },
+  { id: 'u17', name: 'นางสาวอรอนงค์ ขุนทองแก้ว', role: 'TEACHER', username: '17', password: '1111', department: 'ส่วนกลาง' },
+  { id: 'u18', name: 'นางสาวศรัญญา พร้อมประเสริฐ', role: 'TEACHER', username: 'sarunya11ao2011@gmail.com', password: '1234', department: 'งานวิชาการ' },
+  { id: 'u19', name: 'นางสาววิลาวัณย์ หนูแก้ว', role: 'TEACHER', username: 'bee99', password: '1234', department: 'คอมพิวเตอร์' },
+  { id: 'u20', name: 'นางสาววลัยลักษณ์ ทองสาร', role: 'TEACHER', username: 'walailak.thongsarn@gmail.com', password: '1234', department: 'บัญชี' },
+  { id: 'u21', name: 'นายศักดิ์สิริ นิลเอก', role: 'TEACHER', username: '937803327', password: '307', department: 'ช่างยนต์' },
+  { id: 'u22', name: 'นางสาวปริยานุช ชุมลาภ', role: 'TEACHER', username: 'noonok369@gmail.com', password: '1234', department: 'การตลาด' },
+  { id: 'u23', name: 'นายสันติ ศรีสันติธรรม์', role: 'TEACHER', username: 'jiggo.noname.tong@gmail.com', password: '1234', department: 'คอมพิวเตอร์' },
+  { id: 'u24', name: 'นายทิวากร สามิภักดิ์', role: 'TEACHER', username: 'samipak793@gmail.com', password: '1234', department: 'ช่างไฟฟ้า' },
+  { id: 'u25', name: 'นายศรายุทธ สมสุข', role: 'TEACHER', username: 'masterball.dbs@gmail.com', password: 'sarayut.2543', department: 'เทคโนโลยีสารสนเทศ' },
+  { id: 'u26', name: 'นายณัฐชัย ปาวิสัย', role: 'TEACHER', username: 'nattachai182546@gmail.com', password: '1234', department: 'ช่างยนต์' },
+  { id: 'u27', name: 'นายภพศักดิ์ บุญไทย', role: 'TEACHER', username: 'earth', password: '4064', department: 'บัญชี' },
+  { id: 'u28', name: 'บาทหลวงชินธร สถิตเกษตรศรี', role: 'TEACHER', username: 'chinnathip', password: '1234', department: 'ช่างไฟฟ้า' },
+  { id: 'u29', name: 'นายสัจจะ วิชัยดิษฐ์', role: 'TEACHER', username: 'satja', password: '1234', department: 'คอมพิวเตอร์' },
+  { id: 'u30', name: 'ศรีไพร ดวงภักดี', role: 'TEACHER', username: 'Sriprai', password: '1234', department: 'การตลาด' },
+  { id: 'u31', name: 'วรวิทย์ บุญยะ', role: 'TEACHER', username: 'worawit', password: '1234', department: 'งานวิชาการ' }
+];
 
 export const MOCK_STUDENTS: Student[] = [
   // ปวช. 2 ช่างกลโรงงาน (Page 1)
