@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Student, AttendanceRecord, BehaviorRecord, StudyBlock, PaymentRecord, TuitionConfig } from '../types';
+import { Student, AttendanceRecord, BehaviorRecord, StudyBlock, PaymentRecord, TuitionConfig, EnglishScoreRecord } from '../types';
 import * as XLSX from 'xlsx';
 import { 
   FileText, 
@@ -38,10 +38,13 @@ interface ReportsProps {
   studyBlocks: StudyBlock[];
   paymentRecords?: PaymentRecord[];
   tuitionConfigs?: TuitionConfig[];
+  englishScores?: EnglishScoreRecord[];
+  initialTab?: 'individual' | 'room';
 }
 
 const Reports: React.FC<ReportsProps> = ({ 
-  students, attendance, behavior, user, studyBlocks, paymentRecords = [], tuitionConfigs = []
+  students, attendance, behavior, user, studyBlocks, paymentRecords = [], tuitionConfigs = [], englishScores = [],
+  initialTab
 }) => {
   const isParent = user.role === 'PARENT';
   
@@ -50,7 +53,7 @@ const Reports: React.FC<ReportsProps> = ({
     return students.find(s => String(s.id) === String(user.studentId) || String(s.studentId) === String(user.studentId));
   }, [isParent, students, user.studentId]);
 
-  const [activeTab, setActiveTab] = useState<'individual' | 'room'>(isParent ? 'individual' : 'room');
+  const [activeTab, setActiveTab] = useState<'individual' | 'room'>(initialTab || (isParent ? 'individual' : 'room'));
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(
     isParent ? parentChild?.id || null : null
@@ -93,7 +96,42 @@ const Reports: React.FC<ReportsProps> = ({
     const totalDue = config?.amount || 0;
     const remaining = Math.max(0, totalDue - paid);
 
-    return { rate, presents, lates, absents, paid, remaining, totalDue };
+    const sermonRecords = studentRecords.filter(r => r.type === 'SERMON' && r.status === 'RECORDED');
+    // Using a map to track unique entries per block
+    const blockDays: Record<number, Set<number>> = { 1: new Set(), 2: new Set(), 3: new Set(), 4: new Set(), 5: new Set() };
+    sermonRecords.forEach(r => {
+      if (r.sermonBlock && r.sermonDay) {
+        blockDays[r.sermonBlock].add(r.sermonDay);
+      }
+    });
+    
+    // Sum scores from each block (18 days = 5 points)
+    const sermonScore = Number(Object.values(blockDays).reduce((acc, set) => acc + ((set.size / 18) * 5), 0).toFixed(2));
+
+    const englishScore = englishScores.find(e => String(e.studentId) === String(studentId))?.score || 0;
+
+    const blockSermonScores = Object.entries(blockDays).reduce((acc, [block, set]) => {
+      acc[Number(block)] = Number(((set.size / 18) * 5).toFixed(2));
+      return acc;
+    }, {} as Record<number, number>);
+
+    // Calculate Morning Attendance by Block
+    const blockAttendance: Record<number, number> = {};
+    studyBlocks.forEach(block => {
+      const start = new Date(block.startDate);
+      const end = new Date(block.endDate);
+      
+      const recordsInBlock = morningRecords.filter(r => {
+        const recordDate = new Date(r.date);
+        return recordDate >= start && recordDate <= end;
+      });
+
+      const blockPresents = recordsInBlock.filter(r => r.status === 'PRESENT').length;
+      const blockScore = recordsInBlock.length > 0 ? Number(((blockPresents / recordsInBlock.length) * 5).toFixed(2)) : 0;
+      blockAttendance[block.id] = blockScore;
+    });
+
+    return { rate, presents, lates, absents, paid, remaining, totalDue, sermonScore, englishScore, blockSermonScores, blockAttendance };
   };
 
   const exportIndividualExcel = () => {
@@ -129,13 +167,76 @@ const Reports: React.FC<ReportsProps> = ({
     XLSX.writeFile(wb, `รายงานผล_${selectedStudent.studentId}_${selectedStudent.name}.xlsx`);
   };
 
+  const exportRoomExcel = () => {
+    if (roomStudents.length === 0) return;
+
+    const reportData = roomStudents.map((s, idx) => {
+      const metrics = getStudentMetrics(s.id);
+      
+      const b1Att = metrics.blockAttendance[1] || 0;
+      const b1Ser = metrics.blockSermonScores[1] || 0;
+      const b2Att = metrics.blockAttendance[2] || 0;
+      const b2Ser = metrics.blockSermonScores[2] || 0;
+      const b3Att = metrics.blockAttendance[3] || 0;
+      const b3Ser = metrics.blockSermonScores[3] || 0;
+      const b4Att = metrics.blockAttendance[4] || 0;
+      const b4Ser = metrics.blockSermonScores[4] || 0;
+      const b5Att = metrics.blockAttendance[5] || 0;
+      const b5Ser = metrics.blockSermonScores[5] || 0;
+
+      return {
+        'ลำดับ': idx + 1,
+        'ชื่อ-นามสกุล': s.name,
+        'รหัสประจำตัว': s.studentId,
+        'เข้าแถว บล็อก 1 (5)': b1Att,
+        'โอวาท บล็อก 1 (5)': b1Ser,
+        'รวม บล็อก 1 (10)': Number((b1Att + b1Ser).toFixed(2)),
+        'เข้าแถว บล็อก 2 (5)': b2Att,
+        'โอวาท บล็อก 2 (5)': b2Ser,
+        'รวม บล็อก 2 (10)': Number((b2Att + b2Ser).toFixed(2)),
+        'เข้าแถว บล็อก 3 (5)': b3Att,
+        'โอวาท บล็อก 3 (5)': b3Ser,
+        'รวม บล็อก 3 (10)': Number((b3Att + b3Ser).toFixed(2)),
+        'เข้าแถว บล็อก 4 (5)': b4Att,
+        'โอวาท บล็อก 4 (5)': b4Ser,
+        'รวม บล็อก 4 (10)': Number((b4Att + b4Ser).toFixed(2)),
+        'เข้าแถว บล็อก 5 (5)': b5Att,
+        'โอวาท บล็อก 5 (5)': b5Ser,
+        'รวม บล็อก 5 (10)': Number((b5Att + b5Ser).toFixed(2)),
+        'คะแนนภาษาอังกฤษ (เต็ม 10)': metrics.englishScore,
+        'คะแนนพฤติกรรม': s.behaviorScore
+      };
+    });
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(reportData);
+    
+    // Set column widths for better readability
+    const wscols = [
+      { wch: 8 },  // ลำดับ
+      { wch: 25 }, // ชื่อ-นามสกุล
+      { wch: 15 }, // รหัสประจำตัว
+      { wch: 15 }, { wch: 15 }, { wch: 15 }, // บล็อก 1
+      { wch: 15 }, { wch: 15 }, { wch: 15 }, // บล็อก 2
+      { wch: 15 }, { wch: 15 }, { wch: 15 }, // บล็อก 3
+      { wch: 15 }, { wch: 15 }, { wch: 15 }, // บล็อก 4
+      { wch: 15 }, { wch: 15 }, { wch: 15 }, // บล็อก 5
+      { wch: 25 }, // คะแนนภาษาอังกฤษ
+      { wch: 15 }  // คะแนนพฤติกรรม
+    ];
+    ws['!cols'] = wscols;
+
+    XLSX.utils.book_append_sheet(wb, ws, "รายงานผลรายห้อง");
+    XLSX.writeFile(wb, `รายงานสรุป_${reportLevel}_${reportDept}_ห้อง${reportRoom}.xlsx`);
+  };
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div className="flex bg-white p-2 rounded-2xl border border-slate-200 shadow-sm w-fit">
           {!isParent && (
             <button onClick={() => setActiveTab('room')} className={`flex items-center gap-2 px-8 py-3.5 rounded-xl text-sm font-black transition-all font-heading ${activeTab === 'room' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}>
-              <Users size={18} /> สรุปรายห้อง
+              <Users size={18} /> ดึงข้อมูลรายห้อง
             </button>
           )}
           <button onClick={() => setActiveTab('individual')} className={`flex items-center gap-2 px-8 py-3.5 rounded-xl text-sm font-black transition-all font-heading ${activeTab === 'individual' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}>
@@ -171,8 +272,11 @@ const Reports: React.FC<ReportsProps> = ({
                 {availableRooms.map(v => <option key={v} value={v}>ห้อง {v}</option>)}
               </select>
             </div>
-            <button className="bg-slate-900 text-white px-8 py-4 rounded-xl font-black flex items-center justify-center gap-3 shadow-xl hover:bg-black transition-all font-heading uppercase text-xs tracking-widest">
-              <Download size={20} /> ออกรายงานรวม
+            <button 
+              onClick={exportRoomExcel}
+              className="bg-slate-900 text-white px-8 py-4 rounded-xl font-black flex items-center justify-center gap-3 shadow-xl hover:bg-black transition-all font-heading uppercase text-xs tracking-widest"
+            >
+              <Download size={20} /> ดึงข้อมูลรายห้อง
             </button>
           </div>
 
@@ -190,6 +294,7 @@ const Reports: React.FC<ReportsProps> = ({
                     <th className="px-8 py-6">ลำดับ</th>
                     <th className="px-8 py-6">ชื่อ-นามสกุล</th>
                     <th className="px-8 py-6">พฤติกรรม</th>
+                    <th className="px-8 py-6">ภาษาอังกฤษ</th>
                     <th className="px-8 py-6">การมาเข้าแถว</th>
                     <th className="px-8 py-6 text-right">การเงิน</th>
                   </tr>
@@ -205,8 +310,13 @@ const Reports: React.FC<ReportsProps> = ({
                           <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{s.studentId}</p>
                         </td>
                         <td className="px-8 py-6">
-                          <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase ${s.behaviorScore < 70 ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
-                            {s.behaviorScore} แต้ม
+                           <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase ${s.behaviorScore < 70 ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
+                             {s.behaviorScore} แต้ม
+                           </span>
+                        </td>
+                        <td className="px-8 py-6">
+                          <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase ${metrics.englishScore < 5 ? 'bg-amber-50 text-amber-600' : 'bg-indigo-50 text-indigo-600'}`}>
+                            {metrics.englishScore} / 10
                           </span>
                         </td>
                         <td className="px-8 py-6">
@@ -286,7 +396,7 @@ const Reports: React.FC<ReportsProps> = ({
                   </div>
 
                   {/* Metrics Dashboard */}
-                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 mt-14">
+                  <div className="grid grid-cols-2 lg:grid-cols-6 gap-6 mt-14">
                      <div className="bg-slate-50 p-6 rounded-[36px] border border-slate-100 text-center hover:bg-white hover:border-blue-400 transition-all group">
                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">คะแนนพฤติกรรม</p>
                         <p className={`text-4xl font-black font-heading ${selectedStudent.behaviorScore < 70 ? 'text-red-600' : 'text-slate-900'}`}>{selectedStudent.behaviorScore}</p>
@@ -303,11 +413,53 @@ const Reports: React.FC<ReportsProps> = ({
                         <p className="text-[9px] font-bold text-slate-400 uppercase mt-2">จำนวนวันที่มาเช็คชื่อปกติ</p>
                      </div>
                      <div className="bg-slate-50 p-6 rounded-[36px] border border-slate-100 text-center hover:bg-white hover:border-blue-400 transition-all group">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">คะแนนโอวาท</p>
+                        <p className="text-4xl font-black text-indigo-600 font-heading">{getStudentMetrics(selectedStudent.id).sermonScore}</p>
+                        <p className="text-[9px] font-bold text-slate-400 uppercase mt-2">บันทึกสมุดโอวาท (เต็ม 25)</p>
+                     </div>
+                     <div className="bg-slate-50 p-6 rounded-[36px] border border-slate-100 text-center hover:bg-white hover:border-blue-400 transition-all group">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">ภาษาอังกฤษ</p>
+                        <p className="text-4xl font-black text-amber-500 font-heading">{getStudentMetrics(selectedStudent.id).englishScore}</p>
+                        <p className="text-[9px] font-bold text-slate-400 uppercase mt-2">คะแนนเต็ม 10</p>
+                     </div>
+                     <div className="bg-slate-50 p-6 rounded-[36px] border border-slate-100 text-center hover:bg-white hover:border-blue-400 transition-all group">
                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">ยอดค่าเทอมค้าง</p>
                         <p className={`text-4xl font-black font-heading ${getStudentMetrics(selectedStudent.id).remaining > 0 ? 'text-red-600' : 'text-green-600'}`}>
                            {getStudentMetrics(selectedStudent.id).remaining.toLocaleString()}
                         </p>
                         <p className="text-[9px] font-bold text-slate-400 uppercase mt-2">{getStudentMetrics(selectedStudent.id).remaining > 0 ? 'มียอดค้างชำระ' : 'ชำระครบถ้วนแล้ว'}</p>
+                     </div>
+                  </div>
+
+                  {/* Attendance Breakdown */}
+                  <div className="mt-8 bg-slate-50 p-8 rounded-[40px] border border-slate-100">
+                     <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest mb-6 flex items-center gap-2">
+                       <Clock size={16} className="text-blue-500" /> รายละเอียดคะแนนเข้าแถวแยกรายบล็อก (เต็ม 5)
+                     </h4>
+                     <div className="grid grid-cols-5 gap-4">
+                       {studyBlocks.map(block => (
+                         <div key={block.id} className="bg-white p-4 rounded-2xl border border-slate-200 text-center">
+                           <p className="text-[9px] font-black text-slate-400 uppercase mb-1">บล็อก {block.id}</p>
+                           <p className={`text-xl font-black font-heading ${getStudentMetrics(selectedStudent.id).blockAttendance[block.id] < 4 ? 'text-amber-500' : 'text-blue-600'}`}>
+                             {getStudentMetrics(selectedStudent.id).blockAttendance[block.id] || 0}
+                           </p>
+                         </div>
+                       ))}
+                     </div>
+                  </div>
+
+                  {/* Sermon Score Breakdown */}
+                  <div className="mt-8 bg-slate-50 p-8 rounded-[40px] border border-slate-100">
+                     <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest mb-6 flex items-center gap-2">
+                       <Star size={16} className="text-amber-500" /> รายละเอียดคะแนนโอวาทแยกรายบล็อก (บล็อกละ 5 คะแนน)
+                     </h4>
+                     <div className="grid grid-cols-5 gap-4">
+                       {[1, 2, 3, 4, 5].map(block => (
+                         <div key={block} className="bg-white p-4 rounded-2xl border border-slate-200 text-center">
+                           <p className="text-[9px] font-black text-slate-400 uppercase mb-1">บล็อก {block}</p>
+                           <p className="text-xl font-black text-slate-900 font-heading">{getStudentMetrics(selectedStudent.id).blockSermonScores[block] || 0}</p>
+                         </div>
+                       ))}
                      </div>
                   </div>
                 </div>

@@ -7,7 +7,7 @@ import {
   Bell, Sparkles, ExternalLink, Megaphone, Building, AlertTriangle,
   GraduationCap, Calendar
 } from 'lucide-react';
-import { Student, AttendanceRecord, StudyBlock, TuitionConfig, PaymentRecord, NotificationRecord, NewsRecord } from '../types';
+import { Student, AttendanceRecord, StudyBlock, TuitionConfig, PaymentRecord, NotificationRecord, NewsRecord, EnglishScoreRecord } from '../types';
 import { 
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
   BarChart, Bar
@@ -23,6 +23,7 @@ interface DashboardProps {
   tuitionConfigs?: TuitionConfig[];
   paymentRecords?: PaymentRecord[];
   notifications?: NotificationRecord[];
+  englishScores?: EnglishScoreRecord[];
 }
 
 const StatCard = ({ title, value, sub, icon, color, textColor, extra }: any) => (
@@ -49,7 +50,8 @@ const Dashboard: React.FC<DashboardProps> = ({
   studyBlocks = [],
   tuitionConfigs = [],
   paymentRecords = [],
-  notifications = []
+  notifications = [],
+  englishScores = []
 }) => {
   const [viewingStudentId, setViewingStudentId] = useState<string | null>(null);
   const [filterLevel, setFilterLevel] = useState<string>('ALL');
@@ -149,7 +151,18 @@ const Dashboard: React.FC<DashboardProps> = ({
     const paid = (paymentRecords || []).filter(p => String(p.studentId) === sIdStr).reduce((sum, p) => sum + p.amount, 0);
     const remaining = config ? Math.max(0, config.amount - paid) : 0;
 
-    return { blockScore, attRate, remaining, totalExpected: config?.amount || 0, paid };
+    const sermonRecords = records.filter(r => r.type === 'SERMON' && r.status === 'RECORDED');
+    const blockDays: Record<number, Set<number>> = { 1: new Set(), 2: new Set(), 3: new Set(), 4: new Set(), 5: new Set() };
+    sermonRecords.forEach(r => {
+      if (r.sermonBlock && r.sermonDay) {
+        blockDays[r.sermonBlock].add(r.sermonDay);
+      }
+    });
+    const sermonScore = Number(Object.values(blockDays).reduce((acc, set) => acc + ((set.size / 18) * 5), 0).toFixed(2));
+
+    const englishScore = (englishScores || []).find(e => String(e.studentId) === sIdStr)?.score || 0;
+
+    return { blockScore, attRate, remaining, totalExpected: config?.amount || 0, paid, sermonScore, englishScore };
   };
 
   const filteredStudents = useMemo(() => {
@@ -336,7 +349,7 @@ const Dashboard: React.FC<DashboardProps> = ({
           </div>
         </div>
         
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
           <StatCard 
             title="เปอร์เซ็นต์เข้าแถว" 
             value={`${stats.attRate}%`} 
@@ -344,6 +357,22 @@ const Dashboard: React.FC<DashboardProps> = ({
             color="bg-[#00AEEF]" 
             textColor="text-[#00AEEF]" 
             sub="จากทุกวันที่มีการเช็คชื่อ" 
+          />
+          <StatCard 
+            title="คะแนนสมุดโอวาท" 
+            value={stats.sermonScore} 
+            icon={<GraduationCap />} 
+            color="bg-amber-500" 
+            textColor="text-amber-600" 
+            sub="คะแนนการจดบันทึก (เต็ม 25)" 
+          />
+          <StatCard 
+            title="คะแนนภาษาอังกฤษ" 
+            value={stats.englishScore} 
+            icon={<Star />} 
+            color="bg-orange-500" 
+            textColor="text-orange-600" 
+            sub="คะแนนเต็ม 10" 
           />
           <StatCard 
             title="คะแนนพฤติกรรม" 

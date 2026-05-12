@@ -1,5 +1,5 @@
 
-export type UserRole = 'ADMIN' | 'TEACHER' | 'PARENT' | 'FINANCE' | 'ACADEMIC' | 'COMPANY';
+export type UserRole = 'ADMIN' | 'TEACHER' | 'PARENT' | 'FINANCE' | 'ACADEMIC' | 'COMPANY' | 'STUDENT';
 
 export interface User {
   id: string;
@@ -75,11 +75,13 @@ export interface AttendanceRecord {
   id: string;
   studentId: string;
   date: string;
-  type: 'MORNING' | 'SUBJECT';
+  type: 'MORNING' | 'SUBJECT' | 'SERMON';
   subjectId?: string;
-  status: AttendanceStatus;
+  status: AttendanceStatus | 'RECORDED' | 'NOT_RECORDED';
   remark?: string;
   timestamp: string;
+  sermonBlock?: number; // 1-5
+  sermonDay?: number; // 1-18
 }
 
 export interface NewsRecord {
@@ -128,12 +130,22 @@ export interface BehaviorRecord {
   recordedBy: string;
 }
 
+export interface EnglishScoreRecord {
+  id: string;
+  studentId: string;
+  score: number; // 0-10
+  recordedBy: string;
+  date: string;
+  timestamp: string;
+}
+
 export interface TuitionConfig {
   id: string;
   level: string;
   department: string;
   amount: number;
   term: string; 
+  description?: string;
   blockId?: number;
   dueDate?: string;
 }

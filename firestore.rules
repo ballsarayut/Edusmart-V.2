@@ -83,6 +83,16 @@ service cloud.firestore {
              data.role in ['ADMIN', 'TEACHER', 'PARENT', 'FINANCE', 'ACADEMIC', 'COMPANY'];
     }
 
+    function isValidEnglishScore(data) {
+      return data.keys().hasAll(['id', 'studentId', 'score', 'recordedBy', 'date', 'timestamp']) &&
+             data.id is string &&
+             data.studentId is string &&
+             data.score is number && data.score >= 0 && data.score <= 10 &&
+             data.recordedBy is string &&
+             data.date is string &&
+             data.timestamp is string;
+    }
+
     // --- Rules ---
 
     match /users/{userId} {
@@ -148,6 +158,11 @@ service cloud.firestore {
     match /notifications/{notifId} {
       allow read: if true;
       allow create, update, delete: if isValidId(notifId);
+    }
+
+    match /english_scores/{scoreId} {
+      allow read: if true;
+      allow create, update, delete: if isValidId(scoreId);
     }
 
     match /config/{confId} {

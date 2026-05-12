@@ -27,7 +27,8 @@ import {
   CalendarDays,
   GraduationCap,
   Building2,
-  Calendar
+  Calendar,
+  Languages
 } from 'lucide-react';
 
 export const COLORS = {
@@ -78,6 +79,8 @@ export const MENU_ITEMS = [
   { id: 'morning', label: 'เช็คชื่อเข้าแถว', icon: <Users />, roles: ['ADMIN', 'TEACHER'], group: 'ACADEMIC' },
   { id: 'subject', label: 'เช็คชื่อรายวิชา', icon: <BookOpen />, roles: ['ADMIN', 'TEACHER'], group: 'ACADEMIC' },
   { id: 'behavior', label: 'คะแนนพฤติกรรม', icon: <Award />, roles: ['ADMIN', 'TEACHER'], group: 'ACADEMIC' },
+  { id: 'sermon', label: 'สมุดโอวาท', icon: <GraduationCap />, roles: ['ADMIN', 'TEACHER'], group: 'ACADEMIC' },
+  { id: 'english', label: 'คะแนนภาษาอังกฤษ', icon: <Languages />, roles: ['ADMIN', 'TEACHER'], group: 'ACADEMIC' },
   
   { id: 'tuition', label: 'ระบบค่าเทอม', icon: <CreditCard />, roles: ['ADMIN', 'FINANCE'], group: 'FINANCE' },
   { id: 'finance_report', label: 'สรุปรายรับ', icon: <Banknote />, roles: ['ADMIN', 'FINANCE'], group: 'FINANCE' },
@@ -85,6 +88,7 @@ export const MENU_ITEMS = [
 
   { id: 'report', label: 'สรุปรายงานผล', icon: <FileText />, roles: ['ADMIN', 'TEACHER', 'PARENT', 'ACADEMIC'], group: 'ANALYTICS' },
   { id: 'morning_scores', label: 'สรุปคะแนนเข้าแถว', icon: <Star />, roles: ['ADMIN', 'TEACHER', 'ACADEMIC'], group: 'ANALYTICS' },
+  { id: 'sermon_summary', label: 'สรุปคะแนนโอวาท', icon: <Award />, roles: ['ADMIN', 'TEACHER', 'ACADEMIC'], group: 'ANALYTICS' },
   
   { id: 'users', label: 'จัดการผู้ใช้', icon: <ShieldCheck />, roles: ['ADMIN'], group: 'SYSTEM' },
   { id: 'audit_logs', label: 'ประวัติการใช้งาน', icon: <History />, roles: ['ADMIN'], group: 'SYSTEM' },

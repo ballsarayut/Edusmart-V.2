@@ -1,5 +1,5 @@
 
-import { Student, Subject, AttendanceRecord, BehaviorRecord, ThaiLevel, Department, StudyBlock, User } from '../types';
+import { Student, Subject, AttendanceRecord, BehaviorRecord, ThaiLevel, Department, StudyBlock, User, TuitionConfig, PaymentRecord } from '../types';
 
 export const MOCK_USERS: User[] = [
   { id: 'admin', name: 'ผู้ดูแลระบบ', role: 'ADMIN', username: 'admin', password: '1234', department: 'ส่วนกลาง' },
@@ -209,9 +209,9 @@ export const MOCK_BEHAVIOR: BehaviorRecord[] = [
 ];
 
 export const MOCK_TUITION_CONFIGS: TuitionConfig[] = [
-  { id: 'C1', level: ThaiLevel.VC2, department: Department.MECH, amount: 15500, description: 'ค่าเทอม ปวช. 2 ช่างกล' },
-  { id: 'C2', level: ThaiLevel.VC2, department: Department.ELEC, amount: 16200, description: 'ค่าเทอม ปวช. 2 ช่างไฟฟ้า' },
-  { id: 'C3', level: ThaiLevel.VC2, department: Department.AUTO, amount: 15800, description: 'ค่าเทอม ปวช. 2 ช่างยนต์' },
-  { id: 'C4', level: ThaiLevel.VC2, department: Department.BIZ, amount: 14500, description: 'ค่าเทอม ปวช. 2 ธุรกิจดิจิทัล' },
-  { id: 'C5', level: ThaiLevel.HVC2, department: Department.PROD, amount: 18500, description: 'ค่าเทอม ปวส. 2 เทคนิคการผลิต' },
+  { id: 'C1', level: ThaiLevel.VC2, department: Department.MECH, amount: 15500, term: '2/2567', description: 'ค่าเทอม ปวช. 2 ช่างกล' },
+  { id: 'C2', level: ThaiLevel.VC2, department: Department.ELEC, amount: 16200, term: '2/2567', description: 'ค่าเทอม ปวช. 2 ช่างไฟฟ้า' },
+  { id: 'C3', level: ThaiLevel.VC2, department: Department.AUTO, amount: 15800, term: '2/2567', description: 'ค่าเทอม ปวช. 2 ช่างยนต์' },
+  { id: 'C4', level: ThaiLevel.VC2, department: Department.BIZ, amount: 14500, term: '2/2567', description: 'ค่าเทอม ปวช. 2 ธุรกิจดิจิทัล' },
+  { id: 'C5', level: ThaiLevel.HVC2, department: Department.PROD, amount: 18500, term: '2/2567', description: 'ค่าเทอม ปวส. 2 เทคนิคการผลิต' },
 ];

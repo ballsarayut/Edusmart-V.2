@@ -195,6 +195,20 @@
         "scanMode": { "type": "string", "enum": ["BARCODE_SCANNER", "CAMERA"] }
       },
       "required": ["morningTimeLimit", "scanMode"]
+    },
+    "EnglishScoreRecord": {
+      "title": "EnglishScoreRecord",
+      "description": "English language score record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "studentId": { "type": "string" },
+        "score": { "type": "number" },
+        "recordedBy": { "type": "string" },
+        "date": { "type": "string" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["id", "studentId", "score", "recordedBy", "date", "timestamp"]
     }
   },
   "firestore": {
@@ -249,6 +263,10 @@
     "config": {
       "schema": "SystemConfig",
       "description": "System configuration"
+    },
+    "english_scores": {
+      "schema": "EnglishScoreRecord",
+      "description": "Collection of English language scores"
     }
   }
 }

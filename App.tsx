@@ -23,8 +23,11 @@ import NewsBroadcast from './components/NewsBroadcast';
 import AuditLogs from './components/AuditLogs';
 import JobPortal from './components/JobPortal'; 
 import Login from './components/Login';
+import SermonJournalCheck from './components/SermonJournalCheck';
+import SermonJournalSummary from './components/SermonJournalSummary';
+import EnglishScoreEntry from './components/EnglishScoreEntry';
 import { MOCK_STUDENTS, MOCK_ATTENDANCE, MOCK_BEHAVIOR, MOCK_SUBJECTS, MOCK_STUDY_BLOCKS, MOCK_TUITION_CONFIGS, MOCK_USERS } from './data/mockData';
-import { Student, AttendanceRecord, BehaviorRecord, Subject, User, StudyBlock, TuitionConfig, PaymentRecord, NotificationRecord, NewsRecord, LoginLog } from './types';
+import { Student, AttendanceRecord, BehaviorRecord, Subject, User, StudyBlock, TuitionConfig, PaymentRecord, NotificationRecord, NewsRecord, LoginLog, JobAnnouncement, Application, EnglishScoreRecord } from './types';
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(() => {
@@ -71,6 +74,7 @@ const App: React.FC = () => {
   const [studyBlocks, setStudyBlocks] = useState<StudyBlock[]>(MOCK_STUDY_BLOCKS);
   const [jobAnnouncements, setJobAnnouncements] = useState<JobAnnouncement[]>([]);
   const [jobApplications, setJobApplications] = useState<Application[]>([]);
+  const [englishScores, setEnglishScores] = useState<EnglishScoreRecord[]>([]);
 
   // Sync state to cloud helper
   const syncToCloud = async (type: string, data: any) => {
@@ -193,6 +197,7 @@ const App: React.FC = () => {
     const unsubNotifications = syncCollection<NotificationRecord>('notifications', setNotifications);
     const unsubJobs = syncCollection<JobAnnouncement>('jobs', setJobAnnouncements);
     const unsubApplications = syncCollection<Application>('applications', setJobApplications);
+    const unsubEnglishScores = syncCollection<EnglishScoreRecord>('english_scores', setEnglishScores);
     
     // USERS SYNC with Seeding
     const unsubUsers = syncCollection<User>('users', (data) => {
@@ -229,6 +234,7 @@ const App: React.FC = () => {
       unsubNotifications();
       unsubJobs();
       unsubApplications();
+      unsubEnglishScores();
       unsubUsers();
       unsubLogs();
     };
@@ -319,7 +325,7 @@ const App: React.FC = () => {
 
   const renderContent = () => {
     switch (activeMenu) {
-      case 'dashboard': return <Dashboard students={students} attendance={attendance} behavior={behaviorRecords} news={news} notifications={notifications} user={user} studyBlocks={studyBlocks} tuitionConfigs={tuitionConfigs} paymentRecords={paymentRecords} />;
+      case 'dashboard': return <Dashboard students={students} attendance={attendance} behavior={behaviorRecords} news={news} notifications={notifications} user={user} studyBlocks={studyBlocks} tuitionConfigs={tuitionConfigs} paymentRecords={paymentRecords} englishScores={englishScores} />;
       case 'job_portal': return <JobPortal 
                                     currentUser={user} 
                                     students={students} 
@@ -334,10 +340,13 @@ const App: React.FC = () => {
       case 'morning': return <MorningAttendance students={students} setStudents={setStudents} attendanceRecords={attendance} setAttendanceRecords={setAttendance} rooms={rooms} setRooms={setRooms} />;
       case 'subject': return <ClassAttendance students={students} setStudents={setStudents} subjects={subjects} setSubjects={setSubjects} rooms={rooms} setRooms={setRooms} attendanceRecords={attendance} setAttendanceRecords={setAttendance} currentUser={user} />;
       case 'behavior': return <BehaviorSystem students={students} setStudents={setStudents} behaviorRecords={behaviorRecords} setBehaviorRecords={setBehaviorRecords} />;
+      case 'sermon': return <SermonJournalCheck students={students} attendanceRecords={attendance} setAttendanceRecords={setAttendance} />;
+      case 'english': return <EnglishScoreEntry students={students} englishScores={englishScores} setEnglishScores={setEnglishScores} currentUser={user} />;
       case 'tuition': return <TuitionSystem students={students} tuitionConfigs={tuitionConfigs} setTuitionConfigs={setTuitionConfigs} paymentRecords={paymentRecords} setPaymentRecords={setPaymentRecords} user={user} />;
       case 'finance_report': return <FinanceReport students={students} paymentRecords={paymentRecords} tuitionConfigs={tuitionConfigs} />;
-      case 'report': return <Reports students={students} attendance={attendance} behavior={behaviorRecords} user={user} studyBlocks={studyBlocks} paymentRecords={paymentRecords} tuitionConfigs={tuitionConfigs} />;
+      case 'report': return <Reports students={students} attendance={attendance} behavior={behaviorRecords} user={user} studyBlocks={studyBlocks} paymentRecords={paymentRecords} tuitionConfigs={tuitionConfigs} englishScores={englishScores} />;
       case 'morning_scores': return <MorningScoreSummary students={students} attendance={attendance} studyBlocks={studyBlocks} />;
+      case 'sermon_summary': return <SermonJournalSummary students={students} attendance={attendance} />;
       case 'users': return <UserManagement users={systemUsers} setUsers={setSystemUsers} currentUser={user} students={students} />;
       case 'audit_logs': return <AuditLogs logs={loginLogs} setLogs={setLoginLogs} />;
       case 'exam_manager': return <ExamManager studyBlocks={studyBlocks} setStudyBlocks={setStudyBlocks} />;
