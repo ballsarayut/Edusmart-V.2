@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Users, Activity, Star, Clock, BarChart3, ShieldAlert,
-  CheckCircle2, Sun, ArrowLeft, LayoutDashboard, ChevronRight, 
+  CheckCircle2, ArrowLeft, LayoutDashboard, ChevronRight, 
   Wallet, Banknote, Info, MessageSquare, Copy, Check, X,
   Bell, Sparkles, ExternalLink, Megaphone, Building, AlertTriangle,
   GraduationCap, Calendar
@@ -206,13 +206,6 @@ const Dashboard: React.FC<DashboardProps> = ({
     filteredStudents.filter(s => s.behaviorScore < 70).sort((a,b) => a.behaviorScore - b.behaviorScore).slice(0, 6)
   , [filteredStudents]);
 
-  const attendanceWatchlist = useMemo(() => 
-    filteredStudents
-      .map(s => ({ ...s, morningScore: getStudentStats(s).blockScore }))
-      .filter(s => s.morningScore < 3.0)
-      .sort((a,b) => a.morningScore - b.morningScore)
-      .slice(0, 6)
-  , [filteredStudents, attendanceMap, activeBlock]);
 
   const chartData = useMemo(() => {
     const last7Days = Array.from({ length: 7 }, (_, i) => {
@@ -228,6 +221,31 @@ const Dashboard: React.FC<DashboardProps> = ({
       return {
         name: new Date(date).toLocaleDateString('th-TH', { weekday: 'short' }),
         value: presentCount
+      };
+    });
+  }, [attendance]);
+
+  const recentDaysStats = useMemo(() => {
+    // Get unique dates from morning attendance records
+    const morningRecords = (attendance || []).filter(r => r.type === 'MORNING');
+    const uniqueDates = Array.from(new Set(morningRecords.map(r => r.date))).sort().reverse();
+    
+    // Take the 5 most recent dates
+    const top5Dates = uniqueDates.slice(0, 5);
+    
+    return top5Dates.map(date => {
+      const recordsOnDate = morningRecords.filter(r => r.date === date);
+      const present = recordsOnDate.filter(r => r.status === 'PRESENT').length;
+      const late = recordsOnDate.filter(r => r.status === 'LATE').length;
+      const absent = recordsOnDate.filter(r => r.status === 'ABSENT' || r.status === 'SICK_LEAVE' || r.status === 'BUSINESS_LEAVE').length;
+      
+      return {
+        date,
+        dayName: new Date(date).toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long' }),
+        present,
+        late,
+        absent,
+        total: recordsOnDate.length
       };
     });
   }, [attendance]);
@@ -599,7 +617,6 @@ const Dashboard: React.FC<DashboardProps> = ({
           </div>
         </div>
         <StatCard title="เฝ้าระวังพฤติกรรม" value={behaviorWatchlist.length} sub="คะแนนต่ำกว่า 70" icon={<ShieldAlert />} color="bg-red-600" textColor="text-red-600" />
-        <StatCard title="เฝ้าระวังเข้าแถว" value={attendanceWatchlist.length} sub="คะแนนต่ำกว่า 3.0" icon={<Sun />} color="bg-[#00AEEF]" textColor="text-[#00AEEF]" />
         <StatCard title="มาสายวันนี้" value={(attendance || []).filter(a => a.date === new Date().toISOString().split('T')[0] && a.status === 'LATE' && a.type === 'MORNING').length} sub="เข้าแถวหลัง 07:50 น." icon={<Clock />} color="bg-amber-500" textColor="text-amber-600" />
       </div>
 
@@ -629,20 +646,71 @@ const Dashboard: React.FC<DashboardProps> = ({
       )}
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 md:gap-8">
-        <div className="xl:col-span-2 bg-white p-5 md:p-8 rounded-[40px] border border-slate-200 shadow-sm min-h-[400px]">
-          <h3 className="text-lg font-black text-slate-900 font-heading mb-8 flex items-center gap-2">
-             <BarChart3 className="text-[#00AEEF]" size={20} /> สถิติมาเข้าแถว (7 วันล่าสุด)
-          </h3>
-          <div className="h-[300px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10, fontWeight: 700}} />
-                <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10, fontWeight: 700}} />
-                <Tooltip cursor={{fill: '#f8fafc'}} />
-                <Bar dataKey="value" fill="#00AEEF" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+        <div className="xl:col-span-2 space-y-6">
+          <div className="bg-white p-5 md:p-8 rounded-[40px] border border-slate-200 shadow-sm min-h-[400px]">
+            <h3 className="text-lg font-black text-slate-900 font-heading mb-8 flex items-center gap-2">
+               <BarChart3 className="text-[#00AEEF]" size={20} /> สถิติมาเข้าแถว (7 วันล่าสุด)
+            </h3>
+            <div className="h-[300px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10, fontWeight: 700}} />
+                  <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10, fontWeight: 700}} />
+                  <Tooltip cursor={{fill: '#f8fafc'}} />
+                  <Bar dataKey="value" fill="#00AEEF" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="bg-white p-8 rounded-[40px] border border-slate-200 shadow-sm relative overflow-hidden">
+             <div className="absolute top-0 right-0 p-8 opacity-5 text-slate-900 pointer-events-none">
+                <CheckCircle2 size={120} />
+             </div>
+             <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-8 flex items-center gap-3 relative z-10 font-heading">
+               <span className="w-1 h-5 bg-green-500 rounded-full"></span> บันทึกการเข้าแถว 5 วันล่าสุด
+             </h3>
+             
+             <div className="space-y-4 relative z-10">
+                {recentDaysStats.map((day, idx) => (
+                  <div key={day.date} className="group transition-all">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between p-6 bg-slate-50 hover:bg-white border border-slate-100 hover:border-green-200 rounded-[32px] hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
+                       <div className="flex items-center gap-4 mb-4 md:mb-0">
+                          <div className={`w-14 h-14 rounded-2xl flex flex-col items-center justify-center font-black shadow-sm ${idx === 0 ? 'bg-green-600 text-white' : 'bg-white text-slate-900 border border-slate-200'}`}>
+                             <span className="text-[10px] uppercase opacity-70">{new Date(day.date).toLocaleDateString('th-TH', { month: 'short' })}</span>
+                             <span className="text-xl leading-none">{new Date(day.date).getDate()}</span>
+                          </div>
+                          <div>
+                             <p className="text-base font-black text-slate-900 font-heading leading-tight">{day.dayName}</p>
+                             <p className="text-[10px] font-bold text-slate-400 mt-0.5 uppercase tracking-wider">เช็คแล้วทั้งหมด {day.total} รายชื่อ</p>
+                          </div>
+                       </div>
+                       
+                       <div className="grid grid-cols-3 gap-3">
+                          <div className="px-4 py-2 bg-green-50 rounded-xl border border-green-100 text-center group-hover:bg-green-600 group-hover:text-white transition-colors">
+                             <p className="text-[8px] font-black uppercase tracking-widest opacity-60">มา</p>
+                             <p className="text-lg font-black">{day.present}</p>
+                          </div>
+                          <div className="px-4 py-2 bg-amber-50 rounded-xl border border-amber-100 text-center group-hover:bg-amber-500 group-hover:text-white transition-colors">
+                             <p className="text-[8px] font-black uppercase tracking-widest opacity-60">สาย</p>
+                             <p className="text-lg font-black">{day.late}</p>
+                          </div>
+                          <div className="px-4 py-2 bg-red-50 rounded-xl border border-red-100 text-center group-hover:bg-red-600 group-hover:text-white transition-colors">
+                             <p className="text-[8px] font-black uppercase tracking-widest opacity-60">ขาด</p>
+                             <p className="text-lg font-black">{day.absent}</p>
+                          </div>
+                       </div>
+                    </div>
+                  </div>
+                ))}
+                {recentDaysStats.length === 0 && (
+                  <div className="py-20 text-center text-slate-300 border-2 border-dashed border-slate-100 rounded-[40px]">
+                    <Clock size={40} className="mx-auto mb-4 opacity-20" />
+                    <p className="text-xs font-black uppercase tracking-widest">ยังไม่มีข้อมูลการเช็คชื่อ</p>
+                  </div>
+                )}
+             </div>
           </div>
         </div>
 
@@ -676,34 +744,6 @@ const Dashboard: React.FC<DashboardProps> = ({
             </div>
           </div>
 
-          <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm">
-            <h4 className="text-[11px] font-black text-slate-900 uppercase tracking-widest mb-6 flex items-center justify-between border-b pb-4 border-slate-50 font-heading">
-              <span className="flex items-center gap-2"><Sun size={18} className="text-[#00AEEF]" /> เฝ้าระวังเข้าแถว</span>
-            </h4>
-            <div className="space-y-3">
-              {attendanceWatchlist.map(s => (
-                <div key={s.id} className="flex items-center justify-between p-4 bg-sky-50/50 rounded-2xl border border-sky-100/50 group hover:border-sky-300 transition-all">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-[#00AEEF] font-black text-xs border border-sky-100 shrink-0 shadow-sm font-heading group-hover:bg-[#00AEEF] group-hover:text-white transition-colors">
-                      {s.name.charAt(0)}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="font-black text-[13px] text-slate-900 truncate leading-none font-heading">{s.name}</p>
-                      <p className="text-[9px] text-slate-400 font-bold mt-1 uppercase">คะแนน: {s.morningScore}</p>
-                    </div>
-                  </div>
-                  <button 
-                    onClick={() => handleShowStudentDetails(String(s.id))}
-                    className="flex items-center gap-2 px-4 py-2 bg-white text-[#00AEEF] rounded-xl border-2 border-sky-100 shadow-sm hover:bg-[#00AEEF] hover:text-white hover:border-[#00AEEF] transition-all active:scale-95 group/btn"
-                  >
-                    <span className="text-[10px] font-black uppercase">ดูข้อมูล</span>
-                    <ChevronRight size={14} className="group-hover/btn:translate-x-0.5 transition-transform" />
-                  </button>
-                </div>
-              ))}
-              {attendanceWatchlist.length === 0 && <p className="text-center py-6 text-[10px] text-slate-300 font-black uppercase tracking-widest">ไม่มีรายการ</p>}
-            </div>
-          </div>
         </div>
       </div>
     </div>

@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { saveToFirestore } from '../firebaseService';
+import { saveToFirestore, deleteFromFirestore } from '../firebaseService';
 import { Student, TuitionConfig, PaymentRecord, ThaiLevel, Department } from '../types';
 import { 
   CreditCard, Plus, Save, Trash2, Banknote, History, Search, CheckCircle2, 
@@ -204,6 +204,25 @@ const TuitionSystem: React.FC<TuitionSystemProps> = ({
   const processDeleteConfig = (id: string) => {
     setTuitionConfigs(prev => prev.filter(c => c.id !== id));
     setConfirmDeleteId(null);
+  };
+
+  const [paymentToDelete, setPaymentToDelete] = useState<string | null>(null);
+
+  const handleDeletePayment = async (id: string) => {
+    if (paymentToDelete === id) {
+      try {
+        await deleteFromFirestore('payments', id);
+        setPaymentRecords(prev => prev.filter(p => p.id !== id));
+        setPaymentToDelete(null);
+      } catch (error) {
+        console.error("Failed to delete payment: ", error);
+        alert('เกิดข้อผิดพลาดในการลบข้อมูล');
+      }
+    } else {
+      setPaymentToDelete(id);
+      // Auto reset after 3 seconds
+      setTimeout(() => setPaymentToDelete(null), 3000);
+    }
   };
 
   const studentPaymentHistory = useMemo(() => {
@@ -483,9 +502,26 @@ const TuitionSystem: React.FC<TuitionSystemProps> = ({
                                 <span className={`px-2 py-0.5 rounded text-[8px] font-black border ${p.method === 'CASH' ? 'bg-amber-50 text-amber-700 border-amber-100' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>{p.method}</span>
                             </td>
                             <td className="px-8 py-4 text-right">
-                                <button onClick={() => { setReceiptToPrint(p); setShowReceiptModal(true); }} className="p-2.5 bg-slate-100 text-slate-400 hover:bg-[#00AEEF] hover:text-white rounded-xl transition-all shadow-sm group-hover:scale-105">
-                                  <Printer size={16} />
-                                </button>
+                                <div className="flex items-center justify-end gap-2">
+                                  <button onClick={() => { setReceiptToPrint(p); setShowReceiptModal(true); }} className="p-2.5 bg-slate-100 text-slate-400 hover:bg-[#00AEEF] hover:text-white rounded-xl transition-all shadow-sm group-hover:scale-105" title="พิมพ์ใบเสร็จ">
+                                    <Printer size={16} />
+                                  </button>
+                                  <button 
+                                    onClick={(e) => { e.stopPropagation(); handleDeletePayment(p.id); }} 
+                                    className={`p-2.5 rounded-xl transition-all shadow-sm active:scale-95 border flex items-center justify-center min-w-[40px] ${
+                                      paymentToDelete === p.id 
+                                      ? 'bg-red-600 text-white border-red-600 animate-pulse' 
+                                      : 'bg-red-50 text-red-500 border-red-100 hover:bg-red-600 hover:text-white'
+                                    }`} 
+                                    title={paymentToDelete === p.id ? "คลิกอีกครั้งเพื่อยืนยัน" : "ลบรายการ"}
+                                  >
+                                    {paymentToDelete === p.id ? (
+                                      <span className="text-[8px] font-black uppercase whitespace-nowrap px-1">ยืนยัน?</span>
+                                    ) : (
+                                      <Trash2 size={16} />
+                                    )}
+                                  </button>
+                                </div>
                             </td>
                           </tr>
                         ))}

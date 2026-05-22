@@ -1,14 +1,15 @@
 
 import React, { useState } from 'react';
 import { User as UserIcon, Lock, ArrowRight, ShieldCheck, AlertCircle, Sparkles, GraduationCap, Banknote, BookOpen, Building2 } from 'lucide-react';
-import { User } from '../types';
+import { User, Student } from '../types';
 
 interface LoginProps {
   onLogin: (user: User, rememberMe: boolean) => void;
   systemUsers: User[];
+  students?: Student[];
 }
 
-const Login: React.FC<LoginProps> = ({ onLogin, systemUsers }) => {
+const Login: React.FC<LoginProps> = ({ onLogin, systemUsers, students = [] }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
@@ -19,15 +20,35 @@ const Login: React.FC<LoginProps> = ({ onLogin, systemUsers }) => {
     if (e) e.preventDefault();
     setError(null);
 
+    // 1. Check system users
     const foundUser = systemUsers.find(
       (u) => u.username === username && u.password === password
     );
 
     if (foundUser) {
       onLogin(foundUser, rememberMe);
-    } else {
-      setError('ชื่อผู้ใช้งานหรือรหัสผ่านไม่ถูกต้อง กรุณาลองใหม่');
+      return;
     }
+
+    // 2. Check student ID login (Username === Password === studentId)
+    if (username && username === password) {
+      const student = students.find(s => s.studentId === username);
+      if (student) {
+        const studentUser: User = {
+          id: student.id,
+          name: student.name,
+          role: 'PARENT', // Using PARENT role as it has the logic for studentId views
+          username: student.studentId,
+          password: student.studentId,
+          studentId: student.studentId,
+          department: student.department
+        };
+        onLogin(studentUser, rememberMe);
+        return;
+      }
+    }
+
+    setError('ชื่อผู้ใช้งานหรือรหัสผ่านไม่ถูกต้อง กรุณาลองใหม่');
   };
 
   const quickLogin = (u: string, p: string) => {

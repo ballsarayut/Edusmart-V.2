@@ -4,7 +4,8 @@ import { saveMultipleToFirestore } from '../firebaseService';
 import { Student, AttendanceRecord } from '../types';
 import { 
   Search, Save, CheckCircle2, ClipboardCheck, 
-  User, AlertCircle, Check, X, Loader2, Sparkles, GraduationCap, Layers
+  User, AlertCircle, Check, X, Loader2, Sparkles, GraduationCap, Layers,
+  Share2
 } from 'lucide-react';
 
 interface SermonJournalCheckProps {
@@ -101,6 +102,42 @@ const SermonJournalCheck: React.FC<SermonJournalCheckProps> = ({
     setTimeout(() => setIsSaved(false), 2000);
   };
 
+  const shareToLine = () => {
+    const rawDate = new Date().toLocaleDateString('th-TH', { 
+      day: 'numeric', 
+      month: 'long', 
+      year: 'numeric' 
+    });
+    let text = `📔 รายงานสรุปการจดโอวาท\n`;
+    text += `🗓️ วันที่: ${rawDate}\n`;
+    text += `📦 บล็อก ${selectedBlock} | วันที่ ${selectedDay}\n`;
+    text += `🏫 ${level} / ${dept} (ห้อง ${room})\n`;
+    text += `--------------------------\n`;
+    
+    filteredStudents.forEach((s, idx) => {
+      const status = currentSession[s.id] || 'NOT_RECORDED';
+      const label = status === 'RECORDED' ? '✓ (จด)' : '✗ (ไม่จด)';
+      text += `${idx + 1}. ${s.name} ${label}\n`;
+    });
+    
+    text += `--------------------------\n`;
+    const recordedCount = filteredStudents.filter(s => currentSession[s.id] === 'RECORDED').length;
+    const notRecordedCount = filteredStudents.filter(s => (currentSession[s.id] || 'NOT_RECORDED') === 'NOT_RECORDED').length;
+    
+    text += `จด: ${recordedCount} | ไม่จด: ${notRecordedCount} | รวม: ${filteredStudents.length}\n`;
+    text += `ระบบ EduSmart CMS`;
+    window.open(`https://line.me/R/msg/text/?${encodeURIComponent(text)}`, '_blank');
+  };
+
+  const stats = useMemo(() => {
+    const recordedCount = filteredStudents.filter(s => currentSession[s.id] === 'RECORDED').length;
+    const notRecordedCount = filteredStudents.filter(s => (currentSession[s.id] || 'NOT_RECORDED') === 'NOT_RECORDED').length;
+    const total = filteredStudents.length;
+    const percent = total > 0 ? (recordedCount / total) * 100 : 0;
+    
+    return { recordedCount, notRecordedCount, total, percent };
+  }, [filteredStudents, currentSession]);
+
   return (
     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500 pb-20">
       <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-6">
@@ -169,7 +206,21 @@ const SermonJournalCheck: React.FC<SermonJournalCheckProps> = ({
             <p className="text-sm font-black uppercase tracking-widest opacity-60">บันทึกข้อมูล</p>
             <p className="text-xl font-heading tracking-tight">{isSaving ? 'กำลังประมวลผล...' : isSaved ? 'บันทึกสำเร็จ' : `บล็อก ${selectedBlock} วันที่ ${selectedDay}`}</p>
           </div>
-        </button>  </div>
+        </button>
+        
+        {filteredStudents.length > 0 && (
+          <button 
+            onClick={shareToLine}
+            className="w-full xl:w-auto flex items-center justify-center gap-3 px-8 py-5 bg-[#06C755] text-white rounded-[28px] font-black transition-all shadow-xl hover:bg-green-600 active:scale-95"
+          >
+            <Share2 size={24} />
+            <div className="text-left leading-tight">
+              <p className="text-[10px] font-black uppercase tracking-widest opacity-60">ส่งรายงาน</p>
+              <p className="text-lg font-heading tracking-tight">แชร์เข้ากลุ่ม LINE</p>
+            </div>
+          </button>
+        )}
+      </div>
 
       <div className="bg-white p-8 md:p-10 rounded-[40px] border border-slate-200 shadow-sm relative overflow-hidden">
         {/* Background Accent */}
@@ -222,6 +273,22 @@ const SermonJournalCheck: React.FC<SermonJournalCheckProps> = ({
           </div>
           
           <div className="flex gap-3">
+             <div className="flex items-center gap-6 px-6 py-3 bg-white border border-slate-200 rounded-2xl">
+                <div className="flex flex-col">
+                   <span className="text-[8px] font-black text-slate-400 uppercase tracking-[0.2em]">จดแล้ว</span>
+                   <span className="text-lg font-black text-blue-600 leading-none">{stats.recordedCount}</span>
+                </div>
+                <div className="w-px h-6 bg-slate-100" />
+                <div className="flex flex-col">
+                   <span className="text-[8px] font-black text-slate-400 uppercase tracking-[0.2em]">ยังไม่จด</span>
+                   <span className="text-lg font-black text-red-500 leading-none">{stats.notRecordedCount}</span>
+                </div>
+                <div className="w-px h-6 bg-slate-100" />
+                <div className="flex flex-col">
+                   <span className="text-[8px] font-black text-slate-400 uppercase tracking-[0.2em]">ร้อยละ</span>
+                   <span className="text-lg font-black text-slate-900 leading-none">{stats.percent.toFixed(0)}%</span>
+                </div>
+             </div>
              <button onClick={() => markAll('RECORDED')} className="flex-1 md:flex-none px-6 py-3 bg-blue-50 text-blue-700 rounded-xl text-[10px] font-black border border-blue-100 uppercase tracking-widest hover:bg-blue-600 hover:text-white transition-all shadow-sm">จดทุกคน</button>
              <button onClick={() => markAll('NOT_RECORDED')} className="flex-1 md:flex-none px-6 py-3 bg-red-50 text-red-700 rounded-xl text-[10px] font-black border border-red-100 uppercase tracking-widest hover:bg-red-600 hover:text-white transition-all shadow-sm">ไม่จดทุกคน</button>
           </div>

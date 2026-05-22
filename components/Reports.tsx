@@ -127,7 +127,8 @@ const Reports: React.FC<ReportsProps> = ({
       });
 
       const blockPresents = recordsInBlock.filter(r => r.status === 'PRESENT').length;
-      const blockScore = recordsInBlock.length > 0 ? Number(((blockPresents / recordsInBlock.length) * 5).toFixed(2)) : 0;
+      // Fixed: Use 18 days as denominator to match Sermon score calculation (18 days = 5 points)
+      const blockScore = Number(((blockPresents / 18) * 5).toFixed(2));
       blockAttendance[block.id] = blockScore;
     });
 
@@ -170,6 +171,7 @@ const Reports: React.FC<ReportsProps> = ({
   const exportRoomExcel = () => {
     if (roomStudents.length === 0) return;
 
+    // Data for Sheet 1: Detailed Report
     const reportData = roomStudents.map((s, idx) => {
       const metrics = getStudentMetrics(s.id);
       
@@ -190,43 +192,82 @@ const Reports: React.FC<ReportsProps> = ({
         'รหัสประจำตัว': s.studentId,
         'เข้าแถว บล็อก 1 (5)': b1Att,
         'โอวาท บล็อก 1 (5)': b1Ser,
-        'รวม บล็อก 1 (10)': Number((b1Att + b1Ser).toFixed(2)),
+        '⭐ รวม บล็อก 1 (10) ⭐': Number((b1Att + b1Ser).toFixed(2)),
         'เข้าแถว บล็อก 2 (5)': b2Att,
         'โอวาท บล็อก 2 (5)': b2Ser,
-        'รวม บล็อก 2 (10)': Number((b2Att + b2Ser).toFixed(2)),
+        '⭐ รวม บล็อก 2 (10) ⭐': Number((b2Att + b2Ser).toFixed(2)),
         'เข้าแถว บล็อก 3 (5)': b3Att,
         'โอวาท บล็อก 3 (5)': b3Ser,
-        'รวม บล็อก 3 (10)': Number((b3Att + b3Ser).toFixed(2)),
+        '⭐ รวม บล็อก 3 (10) ⭐': Number((b3Att + b3Ser).toFixed(2)),
         'เข้าแถว บล็อก 4 (5)': b4Att,
         'โอวาท บล็อก 4 (5)': b4Ser,
-        'รวม บล็อก 4 (10)': Number((b4Att + b4Ser).toFixed(2)),
+        '⭐ รวม บล็อก 4 (10) ⭐': Number((b4Att + b4Ser).toFixed(2)),
         'เข้าแถว บล็อก 5 (5)': b5Att,
         'โอวาท บล็อก 5 (5)': b5Ser,
-        'รวม บล็อก 5 (10)': Number((b5Att + b5Ser).toFixed(2)),
+        '⭐ รวม บล็อก 5 (10) ⭐': Number((b5Att + b5Ser).toFixed(2)),
         'คะแนนภาษาอังกฤษ (เต็ม 10)': metrics.englishScore,
         'คะแนนพฤติกรรม': s.behaviorScore
       };
     });
 
+    // Data for Sheet 2: Summary Report
+    const summaryData = roomStudents.map((s, idx) => {
+      const metrics = getStudentMetrics(s.id);
+      
+      const b1Sum = Number(((metrics.blockAttendance[1] || 0) + (metrics.blockSermonScores[1] || 0)).toFixed(2));
+      const b2Sum = Number(((metrics.blockAttendance[2] || 0) + (metrics.blockSermonScores[2] || 0)).toFixed(2));
+      const b3Sum = Number(((metrics.blockAttendance[3] || 0) + (metrics.blockSermonScores[3] || 0)).toFixed(2));
+      const b4Sum = Number(((metrics.blockAttendance[4] || 0) + (metrics.blockSermonScores[4] || 0)).toFixed(2));
+      const b5Sum = Number(((metrics.blockAttendance[5] || 0) + (metrics.blockSermonScores[5] || 0)).toFixed(2));
+
+      return {
+        'ลำดับ': idx + 1,
+        'ชื่อ-นามสกุล': s.name,
+        'รหัสประจำตัว': s.studentId,
+        'รวม บล็อก 1': b1Sum,
+        'รวม บล็อก 2': b2Sum,
+        'รวม บล็อก 3': b3Sum,
+        'รวม บล็อก 4': b4Sum,
+        'รวม บล็อก 5': b5Sum,
+        'คะแนนภาษาอังกฤษ': metrics.englishScore
+      };
+    });
+
     const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.json_to_sheet(reportData);
     
-    // Set column widths for better readability
+    // Create first worksheet (Detailed)
+    const ws = XLSX.utils.json_to_sheet(reportData);
     const wscols = [
       { wch: 8 },  // ลำดับ
       { wch: 25 }, // ชื่อ-นามสกุล
       { wch: 15 }, // รหัสประจำตัว
-      { wch: 15 }, { wch: 15 }, { wch: 15 }, // บล็อก 1
-      { wch: 15 }, { wch: 15 }, { wch: 15 }, // บล็อก 2
-      { wch: 15 }, { wch: 15 }, { wch: 15 }, // บล็อก 3
-      { wch: 15 }, { wch: 15 }, { wch: 15 }, // บล็อก 4
-      { wch: 15 }, { wch: 15 }, { wch: 15 }, // บล็อก 5
+      { wch: 20 }, { wch: 20 }, { wch: 22 }, // บล็อก 1
+      { wch: 20 }, { wch: 20 }, { wch: 22 }, // บล็อก 2
+      { wch: 20 }, { wch: 20 }, { wch: 22 }, // บล็อก 3
+      { wch: 20 }, { wch: 20 }, { wch: 22 }, // บล็อก 4
+      { wch: 20 }, { wch: 20 }, { wch: 22 }, // บล็อก 5
       { wch: 25 }, // คะแนนภาษาอังกฤษ
       { wch: 15 }  // คะแนนพฤติกรรม
     ];
     ws['!cols'] = wscols;
+    XLSX.utils.book_append_sheet(wb, ws, "รายงานผลรายห้อง (ละเอียด)");
 
-    XLSX.utils.book_append_sheet(wb, ws, "รายงานผลรายห้อง");
+    // Create second worksheet (Summary)
+    const wsSummary = XLSX.utils.json_to_sheet(summaryData);
+    const summaryCols = [
+      { wch: 8 },  // ลำดับ
+      { wch: 25 }, // ชื่อ-นามสกุล
+      { wch: 15 }, // รหัสประจำตัว
+      { wch: 15 }, // บล็อก 1
+      { wch: 15 }, // บล็อก 2
+      { wch: 15 }, // บล็อก 3
+      { wch: 15 }, // บล็อก 4
+      { wch: 15 }, // บล็อก 5
+      { wch: 20 }  // คะแนนภาษาอังกฤษ
+    ];
+    wsSummary['!cols'] = summaryCols;
+    XLSX.utils.book_append_sheet(wb, wsSummary, "สรุปคะแนนรวม");
+
     XLSX.writeFile(wb, `รายงานสรุป_${reportLevel}_${reportDept}_ห้อง${reportRoom}.xlsx`);
   };
 

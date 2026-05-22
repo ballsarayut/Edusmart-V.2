@@ -7,7 +7,9 @@ import {
   Loader2,
   Table as TableIcon,
   CheckCircle2,
-  Server
+  Server,
+  Copy,
+  Code as CodeIcon
 } from 'lucide-react';
 
 interface CloudConfigProps {
@@ -24,6 +26,108 @@ const CloudConfig: React.FC<CloudConfigProps> = ({
   const [googleScriptUrl, setGoogleScriptUrl] = useState('');
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<null | 'success' | 'error'>(null);
+  const [copied, setCopied] = useState(false);
+
+  const googleAppsScriptCode = `/**
+ * EduSmart CMS - Google Sheets Sync Script
+ * 1. Open Google Sheets
+ * 2. Extensions > Apps Script
+ * 3. Paste this code
+ * 4. Build > Deploy > New Deployment
+ * 5. Select type: Web App
+ * 6. Execute as: Me
+ * 7. Who has access: Anyone
+ * 8. Copy the Web App URL and paste it in the CMS
+ */
+
+function doPost(e) {
+  try {
+    var data = JSON.parse(e.postData.contents);
+    var action = data.action;
+    
+    if (action === 'syncData') {
+      var ss = SpreadsheetApp.getActiveSpreadsheet();
+      
+      // 1. Students
+      if (data.students) {
+        var sheet = getOrCreateSheet(ss, "ST_STUDENTS");
+        sheet.clear();
+        sheet.appendRow(["Student ID", "Name", "Level", "Department", "Room", "Behavior Score"]);
+        if (data.students.length > 0) {
+          sheet.getRange(2, 1, data.students.length, data.students[0].length).setValues(data.students);
+        }
+      }
+      
+      // 2. Morning Attendance
+      if (data.morning) {
+        var sheet = getOrCreateSheet(ss, "AT_MORNING");
+        sheet.clear();
+        sheet.appendRow(["Date", "Student ID", "Name", "Level", "Department", "Status", "Timestamp"]);
+        if (data.morning.length > 0) {
+          sheet.getRange(2, 1, data.morning.length, data.morning[0].length).setValues(data.morning);
+        }
+      }
+      
+      // 3. Behavior Records
+      if (data.behavior) {
+        var sheet = getOrCreateSheet(ss, "BE_RECORDS");
+        sheet.clear();
+        sheet.appendRow(["Date", "Student ID", "Name", "Type", "Score", "Reason", "Recorded By"]);
+        if (data.behavior.length > 0) {
+          sheet.getRange(2, 1, data.behavior.length, data.behavior[0].length).setValues(data.behavior);
+        }
+      }
+      
+      // 4. Payments
+      if (data.payments) {
+        var sheet = getOrCreateSheet(ss, "PY_RECORDS");
+        sheet.clear();
+        sheet.appendRow(["Date", "Student ID", "Name", "Amount", "Method", "Recorded By"]);
+        if (data.payments.length > 0) {
+          sheet.getRange(2, 1, data.payments.length, data.payments[0].length).setValues(data.payments);
+        }
+      }
+      
+      // 5. Subject Attendance (Dynamically created sheets)
+      if (data.subjects) {
+        for (var code in data.subjects) {
+          var records = data.subjects[code];
+          var sheet = getOrCreateSheet(ss, "SUB_" + code);
+          sheet.clear();
+          sheet.appendRow(["Date", "Student ID", "Name", "Level", "Status", "Remark", "Timestamp"]);
+          if (records.length > 0) {
+            var values = records.map(function(r) {
+              return [r.date, r.studentId, r.name, r.level, r.status, r.remark, r.timestamp];
+            });
+            sheet.getRange(2, 1, values.length, values[0].length).setValues(values);
+          }
+        }
+      }
+      
+      return ContentService.createTextOutput(JSON.stringify({status: 'success'}))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    
+    return ContentService.createTextOutput(JSON.stringify({status: 'error', message: 'Invalid action'}))
+      .setMimeType(ContentService.MimeType.JSON);
+      
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({status: 'error', message: err.toString()}))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function getOrCreateSheet(ss, name) {
+  var sheet = ss.getSheetByName(name);
+  if (!sheet) {
+    sheet = ss.insertSheet(name);
+  }
+  return sheet;
+}
+
+function doGet() {
+  return ContentService.createTextOutput("EduSmart CMS Web App is running.");
+}`;
 
   useEffect(() => {
     const savedUrl = localStorage.getItem('cms_google_script_url');
@@ -33,6 +137,12 @@ const CloudConfig: React.FC<CloudConfigProps> = ({
   const handleSaveUrl = () => {
     localStorage.setItem('cms_google_script_url', googleScriptUrl);
     alert('บันทึก Web App URL เรียบร้อยแล้ว');
+  };
+
+  const copyCode = () => {
+    navigator.clipboard.writeText(googleAppsScriptCode);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   const handleSyncToSheets = async () => {
@@ -162,6 +272,37 @@ const CloudConfig: React.FC<CloudConfigProps> = ({
                   <p className="text-[10px] font-bold text-slate-500">เมื่อตั้งค่า URL แล้ว ทุกเครื่องจะดึงข้อมูลจากชีตเดียวกันเสมอ</p>
                </div>
             </div>
+          </div>
+
+          <div className="pt-6 border-t border-slate-100">
+             <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-3">
+                   <div className="p-2 bg-slate-100 text-slate-600 rounded-lg"><CodeIcon size={18} /></div>
+                   <h3 className="text-sm font-black text-slate-900 uppercase font-heading">Google Apps Script Code</h3>
+                </div>
+                <button 
+                  onClick={copyCode}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${
+                    copied ? 'bg-green-600 text-white shadow-lg' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  {copied ? <CheckCircle2 size={14} /> : <Copy size={14} />}
+                  {copied ? 'คัดลอกแล้ว' : 'คัดลอกโค้ด'}
+                </button>
+             </div>
+             <div className="bg-slate-900 rounded-3xl p-6 overflow-hidden relative shadow-inner">
+                <div className="overflow-auto max-h-[300px] font-mono text-[11px] text-emerald-400 leading-relaxed scrollbar-hide">
+                   <pre>{googleAppsScriptCode}</pre>
+                </div>
+                <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-slate-900 to-transparent pointer-events-none" />
+             </div>
+             <div className="mt-4 p-4 bg-amber-50 border border-amber-100 rounded-2xl flex gap-3 text-amber-700">
+                <Zap size={18} className="shrink-0" />
+                <p className="text-[10px] font-bold italic">
+                  คัดลอกโค้ดด้านบนไปวางใน Google Apps Script (Extensions {'>'} Apps Script) แล้วทำการ Deploy เป็น Web App 
+                  เพื่อให้ระบบสามารถเชื่อมต่อกับ Google Sheets ได้อย่างสมบูรณ์
+                </p>
+             </div>
           </div>
         </div>
       </div>

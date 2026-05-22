@@ -124,15 +124,14 @@ const App: React.FC = () => {
 
     // PUBLIC COLLECTIONS
     const unsubNews = syncCollection<NewsRecord>('news', (data) => {
-      if (data.length > 0) setNews(data);
-      else if (isFirebaseReady) {
-        // Fallback to local logic if needed, or just let it be empty
-      }
+      setNews(data);
     });
 
     const unsubSubjects = syncCollection<Subject>('subjects', (data) => {
-      if (data.length > 0) setSubjects(data);
-      else if (isFirebaseReady) {
+      if (data.length > 0) {
+        setSubjects(data);
+        localStorage.setItem('seeded_subjects', 'true');
+      } else if (isFirebaseReady) {
          setSubjects(MOCK_SUBJECTS);
          const hasSeeded = localStorage.getItem('seeded_subjects');
          if (!hasSeeded) {
@@ -321,7 +320,7 @@ const App: React.FC = () => {
     }
   };
 
-  if (!user) return <Login onLogin={handleLogin} systemUsers={systemUsers} />;
+  if (!user) return <Login onLogin={handleLogin} systemUsers={systemUsers} students={students} />;
 
   const renderContent = () => {
     switch (activeMenu) {

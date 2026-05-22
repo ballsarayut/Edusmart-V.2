@@ -118,10 +118,23 @@ const NewsBroadcast: React.FC<NewsBroadcastProps> = ({ students, news, setNews, 
     setIndividualInput('');
   };
 
-  const deleteNews = (id: string) => {
-    if (confirm('ยืนยันการลบข่าวสารนี้?')) {
-      deleteFromFirestore('news', id);
-      setNews(prev => prev.filter(n => n.id !== id));
+  const [newsToDelete, setNewsToDelete] = useState<string | null>(null);
+
+  const deleteNews = async (id: string | number) => {
+    const idStr = String(id);
+    if (newsToDelete === idStr) {
+      try {
+        await deleteFromFirestore('news', idStr);
+        setNews(prev => prev.filter(n => n.id !== idStr));
+        setNewsToDelete(null);
+      } catch (error) {
+        console.error("Failed to delete news: ", error);
+        alert('เกิดข้อผิดพลาดในการลบข้อมูล');
+      }
+    } else {
+      setNewsToDelete(idStr);
+      // Auto reset after 3 seconds
+      setTimeout(() => setNewsToDelete(null), 3000);
     }
   };
 
@@ -197,7 +210,21 @@ const NewsBroadcast: React.FC<NewsBroadcastProps> = ({ students, news, setNews, 
               </div>
               
               <div className="flex gap-2">
-                 <button onClick={() => deleteNews(item.id)} className="p-3 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-2xl transition-all"><Trash2 size={22} /></button>
+                 <button 
+                   onClick={(e) => { e.stopPropagation(); deleteNews(item.id); }} 
+                   className={`p-3 rounded-2xl transition-all shadow-sm active:scale-95 border flex items-center justify-center min-w-[50px] ${
+                     newsToDelete === item.id 
+                     ? 'bg-red-600 text-white border-red-600 animate-pulse' 
+                     : 'bg-red-50 text-red-500 border-red-100 hover:bg-red-600 hover:text-white'
+                   }`}
+                   title={newsToDelete === item.id ? "คลิกอีกครั้งเพื่อยืนยัน" : "ลบข่าวสาร"}
+                 >
+                   {newsToDelete === item.id ? (
+                     <span className="text-[10px] font-black uppercase whitespace-nowrap px-1">ยืนยัน?</span>
+                   ) : (
+                     <Trash2 size={22} />
+                   )}
+                 </button>
               </div>
             </div>
           </div>
