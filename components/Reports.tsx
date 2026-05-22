@@ -23,6 +23,7 @@ import {
   ArrowRight,
   TrendingDown,
   Activity,
+  MessageCircle,
   /* Added missing icons to fix component errors */
   Star,
   X,
@@ -166,6 +167,28 @@ const Reports: React.FC<ReportsProps> = ({
     XLSX.utils.book_append_sheet(wb, wsBeh, "บันทึกพฤติกรรม");
 
     XLSX.writeFile(wb, `รายงานผล_${selectedStudent.studentId}_${selectedStudent.name}.xlsx`);
+  };
+
+  const shareToLine = () => {
+    if (!selectedStudent) return;
+    const metrics = getStudentMetrics(selectedStudent.id);
+    
+    const message = `📊 รายงานผลนักเรียน: ${selectedStudent.name} (${selectedStudent.studentId})
+-------------------------
+🏫 ระดับ: ${selectedStudent.level}
+📂 แผนก: ${selectedStudent.department}
+
+✅ คะแนนพฤติกรรม: ${selectedStudent.behaviorScore}
+🕒 อัตราเข้าแถว: ${metrics.rate}%
+📚 คะแนนโอวาท: ${metrics.sermonScore}
+🇺🇸 คะแนนอังกฤษ: ${metrics.englishScore}
+
+💰 การเงิน: ${metrics.remaining === 0 ? 'ชำระครบถ้วน' : `ค้างชำระ ${metrics.remaining.toLocaleString()} บาท`}
+-------------------------
+ข้อมูลส่งตรงจากระบบ EduSmart Vocational CMS`;
+
+    const lineUrl = `https://line.me/R/msg/text/?${encodeURIComponent(message)}`;
+    window.open(lineUrl, '_blank');
   };
 
   const exportRoomExcel = () => {
@@ -428,12 +451,20 @@ const Reports: React.FC<ReportsProps> = ({
                         </div>
                       </div>
                     </div>
-                    <button 
-                      onClick={exportIndividualExcel}
-                      className="flex items-center gap-3 px-10 py-5 bg-green-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-2xl shadow-green-100 hover:bg-green-700 transition-all active:scale-95"
-                    >
-                      <FileSpreadsheet size={22} /> ออกรายงานฉบับสมบูรณ์
-                    </button>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <button 
+                        onClick={shareToLine}
+                        className="flex items-center gap-2 px-6 py-5 bg-[#00B900] text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg hover:bg-[#00a300] transition-all active:scale-95"
+                      >
+                        <MessageCircle size={22} /> แชร์เข้า LINE
+                      </button>
+                      <button 
+                        onClick={exportIndividualExcel}
+                        className="flex items-center gap-3 px-10 py-5 bg-green-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-2xl shadow-green-100 hover:bg-green-700 transition-all active:scale-95"
+                      >
+                        <FileSpreadsheet size={22} /> ออกรายงานฉบับสมบูรณ์
+                      </button>
+                    </div>
                   </div>
 
                   {/* Metrics Dashboard */}
