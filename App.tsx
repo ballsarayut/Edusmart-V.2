@@ -168,8 +168,21 @@ const App: React.FC = () => {
     // CORE COLLECTIONS SYNC (Now accessible without auth for better device sync)
     const unsubStudents = syncCollection<Student>('students', (data) => {
       console.log(`Synced ${data.length} students from cloud`);
-      if (data.length > 0) {
-        setStudents(data);
+      
+      // Normalize level and room to prevent duplicate categories due to spaces (e.g. "ปวช.1" vs "ปวช. 1")
+      const normalizedData = data.map(s => {
+        let nLevel = s.level ? String(s.level).trim() : '';
+        nLevel = nLevel.replace(/^(ปว[ชส])\.?\s*([1-3])$/, '$1. $2');
+        
+        let nRoom = s.room ? String(s.room).trim() : '';
+        nRoom = nRoom.replace(/^ห้อง\s*([0-9]+)$/, '$1');
+        nRoom = nRoom.replace(/\s+/g, '');
+        
+        return { ...s, level: nLevel, room: nRoom };
+      });
+
+      if (normalizedData.length > 0) {
+        setStudents(normalizedData);
         setIsStudentsLoaded(true);
       } else if (isFirebaseReady) {
         // Cloud is empty, use MOCK as fallback for local view

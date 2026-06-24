@@ -80,21 +80,29 @@ const StudentManagement: React.FC<StudentManagementProps> = ({ students, setStud
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    
+    let nLevel = String(formData.level || '').trim();
+    nLevel = nLevel.replace(/^(ปว[ชส])\.?\s*([1-3])$/, '$1. $2');
+    
+    let nRoom = String(formData.room || '1').trim();
+    nRoom = nRoom.replace(/^ห้อง\s*([0-9]+)$/, '$1');
+    nRoom = nRoom.replace(/\s+/g, '');
+
     if (showModal === 'ADD') {
       const newStudent: Student = {
         id: `STU_${Date.now()}`,
         studentId: formData.studentId || '',
         name: formData.name || '',
-        level: formData.level || '',
+        level: nLevel,
         department: formData.department || '',
-        room: formData.room || '1',
+        room: nRoom,
         behaviorScore: 100
       };
       // Save to Firestore
       saveToFirestore('students', newStudent);
       setStudents(prev => [newStudent, ...prev]);
     } else if (showModal === 'EDIT' && editingStudentId) {
-      const updatedStudent = { ...formData, id: editingStudentId } as Student;
+      const updatedStudent = { ...formData, id: editingStudentId, level: nLevel, room: nRoom } as Student;
       // Save to Firestore
       saveToFirestore('students', updatedStudent);
       setStudents(prev => prev.map(s => s.id === editingStudentId ? updatedStudent : s));
@@ -165,15 +173,24 @@ const StudentManagement: React.FC<StudentManagementProps> = ({ students, setStud
         const worksheet = workbook.Sheets[sheetName];
         const json: any[] = XLSX.utils.sheet_to_json(worksheet);
 
-        const newStudents: Student[] = json.map((row, i) => ({
-          id: `STU_IMP_${Date.now()}_${i}`,
-          studentId: String(row.studentId || '').trim(),
-          name: String(row.name || '').trim(),
-          level: String(row.level || '').trim(),
-          department: String(row.department || '').trim(),
-          room: String(row.room || '1').trim(),
-          behaviorScore: 100
-        })).filter(s => s.studentId && s.name);
+        const newStudents: Student[] = json.map((row, i) => {
+          let nLevel = String(row.level || '').trim();
+          nLevel = nLevel.replace(/^(ปว[ชส])\.?\s*([1-3])$/, '$1. $2');
+          
+          let nRoom = String(row.room || '1').trim();
+          nRoom = nRoom.replace(/^ห้อง\s*([0-9]+)$/, '$1');
+          nRoom = nRoom.replace(/\s+/g, '');
+          
+          return {
+            id: `STU_IMP_${Date.now()}_${i}`,
+            studentId: String(row.studentId || '').trim(),
+            name: String(row.name || '').trim(),
+            level: nLevel,
+            department: String(row.department || '').trim(),
+            room: nRoom,
+            behaviorScore: 100
+          };
+        }).filter(s => s.studentId && s.name);
 
         if (newStudents.length > 0) {
           // Save to Firestore in batch

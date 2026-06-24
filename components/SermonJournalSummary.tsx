@@ -21,37 +21,64 @@ const SermonJournalSummary: React.FC<SermonJournalSummaryProps> = ({ students, a
   const [selectedRoom, setSelectedRoom] = useState<string>(availableRooms[0] || '');
   const [searchTerm, setSearchTerm] = useState('');
 
-  const calculateSermonScore = (studentId: string) => {
-    const studentRecords = attendance.filter(a => 
-      a.studentId === studentId && 
-      a.type === 'SERMON'
-    );
+  const globalActiveBlocks = useMemo(() => {
+    const active = new Set<number>();
+    attendance.forEach(a => {
+      if (a.type === 'SERMON' && a.sermonBlock) {
+        active.add(a.sermonBlock);
+      }
+    });
+    return active;
+  }, [attendance]);
 
-    // Map to track recorded days per block
-    const blockDays: Record<number, Set<number>> = {
+  const calculateSermonScore = (studentId: string) => {
+    const studentRecords = attendance.filter(a => a.studentId === studentId);
+    
+    const blockMistakes: Record<number, Set<string>> = {
       1: new Set(), 2: new Set(), 3: new Set(), 4: new Set(), 5: new Set()
     };
 
+    // Note: status 'NOT_RECORDED' in sermon, or 'ABSENT'/'LATE' in morning
     studentRecords.forEach(r => {
-      if (r.sermonBlock && r.sermonDay && r.status === 'RECORDED') {
-        blockDays[r.sermonBlock].add(r.sermonDay);
+      if (r.type === 'SERMON' && r.sermonBlock && r.date) {
+        if (r.status === 'NOT_RECORDED') {
+          blockMistakes[r.sermonBlock].add(r.date);
+        }
+      }
+    });
+
+    studentRecords.forEach(r => {
+      if (r.type === 'MORNING' && r.date && (r.status === 'ABSENT' || r.status === 'LATE' || r.status === 'BUSINESS_LEAVE' || r.status === 'SICK_LEAVE')) {
+        // Find if this date had a sermon check
+        const matchingSermon = studentRecords.find(s => s.type === 'SERMON' && s.date === r.date);
+        if (matchingSermon && matchingSermon.sermonBlock) {
+          blockMistakes[matchingSermon.sermonBlock].add(r.date);
+        }
       }
     });
 
     const blockScores: Record<number, number> = {};
-    Object.keys(blockDays).forEach(b => {
-      const dayCount = blockDays[Number(b)].size;
-      // 18 days = 5 points per block
-      blockScores[Number(b)] = Number(((dayCount / 18) * 5).toFixed(2));
+    Object.keys(blockMistakes).forEach(b => {
+      const blockNum = Number(b);
+      if (globalActiveBlocks.has(blockNum)) {
+        const mistakeCount = blockMistakes[blockNum].size;
+        // start at 5, deduct 5/18 per mistake
+        blockScores[blockNum] = Number(Math.max(0, 5 - (mistakeCount / 18) * 5).toFixed(2));
+      } else {
+        blockScores[blockNum] = 0;
+      }
     });
 
     const totalScore = Number(Object.values(blockScores).reduce((acc, curr) => acc + curr, 0).toFixed(2));
-    const totalRecordedCount = Object.values(blockDays).reduce((acc, set) => acc + set.size, 0);
+    
+    // total records checked can just be derived from Sermon entries
+    const totalSermonChecks = new Set(studentRecords.filter(r => r.type === 'SERMON' && r.sermonBlock).map(r => `${r.sermonBlock}_${r.date}`)).size;
 
     return {
       score: totalScore,
-      rawCount: totalRecordedCount,
-      blockScores
+      rawCount: totalSermonChecks,
+      blockScores,
+      blockMistakes
     };
   };
 
