@@ -25,7 +25,7 @@ const BehaviorSystem: React.FC<BehaviorSystemProps> = ({ students, setStudents, 
     if (!selectedStudent || !reason.trim()) return;
 
     const change = type === 'ADD' ? scoreChange : -scoreChange;
-    const newScore = Math.min(100, Math.max(0, selectedStudent.behaviorScore + change));
+    const newScore = Math.max(0, selectedStudent.behaviorScore + change);
     const updatedStudent = { ...selectedStudent, behaviorScore: newScore };
 
     // Update Student Score in Firestore
@@ -65,7 +65,7 @@ const BehaviorSystem: React.FC<BehaviorSystemProps> = ({ students, setStudents, 
       const student = students.find(s => s.id === record.studentId);
       if (student) {
         const adjustment = record.type === 'ADD' ? -record.score : record.score;
-        const newScore = Math.min(100, Math.max(0, student.behaviorScore + adjustment));
+        const newScore = Math.max(0, student.behaviorScore + adjustment);
         const updatedStudent = { ...student, behaviorScore: newScore };
         
         // Save the updated student score back to Firestore

@@ -49,6 +49,7 @@ const StudentManagement: React.FC<StudentManagementProps> = ({ students, setStud
   const [showModal, setShowModal] = useState<'ADD' | 'EDIT' | null>(null);
   const [studentToDelete, setStudentToDelete] = useState<Student | null>(null);
   const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
+  const [isEvening, setIsEvening] = useState(false);
   const [formData, setFormData] = useState<Partial<Student>>({
     studentId: '',
     name: '',
@@ -62,7 +63,14 @@ const StudentManagement: React.FC<StudentManagementProps> = ({ students, setStud
   );
 
   const handleOpenEdit = (student: Student) => {
-    setFormData({ ...student });
+    let cleanLevel = student.level;
+    const hasEvening = student.level.includes('ภาคค่ำ') || student.room.includes('ภาคค่ำ') || student.department.includes('ภาคค่ำ');
+    setIsEvening(hasEvening);
+    
+    if (cleanLevel.includes('ภาคค่ำ')) {
+      cleanLevel = cleanLevel.replace(' ภาคค่ำ', '').replace('ภาคค่ำ', '').trim();
+    }
+    setFormData({ ...student, level: cleanLevel });
     setEditingStudentId(student.id);
     setShowModal('EDIT');
   };
@@ -75,6 +83,7 @@ const StudentManagement: React.FC<StudentManagementProps> = ({ students, setStud
       department: availableDepts[0] || '',
       room: '1'
     });
+    setIsEvening(false);
     setShowModal('ADD');
   };
 
@@ -87,6 +96,12 @@ const StudentManagement: React.FC<StudentManagementProps> = ({ students, setStud
     let nRoom = String(formData.room || '1').trim();
     nRoom = nRoom.replace(/^ห้อง\s*([0-9]+)$/, '$1');
     nRoom = nRoom.replace(/\s+/g, '');
+
+    if (isEvening && !nLevel.includes('ภาคค่ำ')) {
+      nLevel += ' ภาคค่ำ';
+    } else if (!isEvening && nLevel.includes('ภาคค่ำ')) {
+      nLevel = nLevel.replace(' ภาคค่ำ', '').replace('ภาคค่ำ', '').trim();
+    }
 
     if (showModal === 'ADD') {
       const newStudent: Student = {
@@ -425,6 +440,19 @@ const StudentManagement: React.FC<StudentManagementProps> = ({ students, setStud
                 <select value={formData.department} onChange={(e) => setFormData({...formData, department: e.target.value})} className="w-full bg-slate-50 border-2 border-slate-100 focus:border-blue-500 rounded-2xl px-5 py-4 font-black text-slate-900 outline-none cursor-pointer">
                   {availableDepts.map(v => <option key={v} value={v}>{v}</option>)}
                 </select>
+              </div>
+
+              <div className="flex items-center gap-3 pt-2">
+                <input 
+                  type="checkbox" 
+                  id="eveningShift" 
+                  checked={isEvening}
+                  onChange={(e) => setIsEvening(e.target.checked)}
+                  className="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                />
+                <label htmlFor="eveningShift" className="text-sm font-black text-slate-700 cursor-pointer select-none">
+                  นักเรียนภาคค่ำ
+                </label>
               </div>
 
               <div className="flex gap-4 pt-6">

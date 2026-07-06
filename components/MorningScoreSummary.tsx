@@ -49,14 +49,14 @@ const MorningScoreSummary: React.FC<MorningScoreSummaryProps> = ({ students, att
       return recordDate >= currentBlock.startDate && recordDate <= currentBlock.endDate;
     }).length;
 
-    // 4. นับวันหยุดพิเศษ (Holidays) ในบล็อกที่เลือก (ถือเป็นวันมาเรียน)
+    // 4. วันหยุดพิเศษ ไม่นำมาคำนวณในฐาน 18 วัน (ตาม requirement: เฉพาะวันที่มาเข้าแถว)
     const holidayDays = blocksToProcess.reduce((acc, b) => {
       if (selectedBlockId !== 'ALL' && b.id !== selectedBlockId) return acc;
       return acc + (Array.isArray(b.holidays) ? b.holidays.length : 0);
     }, 0);
     
-    // 5. รวมวันมาเรียนทั้งหมด
-    const totalDays = actualPresentDays + holidayDays;
+    // 5. นับเฉพาะวันที่มาเข้าแถวจริง
+    const totalDays = actualPresentDays;
     
     // 6. คำนวณคะแนน (ฐาน 18 วัน = 5.0 คะแนน)
     const baseDays = 18;

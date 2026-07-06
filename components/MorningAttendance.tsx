@@ -171,21 +171,36 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
     text += `🗓️ วันที่: ${rawDate}\n`;
     text += `🏫 ${level} / ${dept} (ห้อง ${room})\n`;
     text += `--------------------------\n`;
+    
+    let eveningCount = 0;
+    
     filteredStudents.forEach((s, idx) => {
+      const isEvening = s.level?.includes('ภาคค่ำ') || s.department?.includes('ภาคค่ำ') || s.room?.includes('ภาคค่ำ');
       const status = currentSession[s.id] || 'ABSENT';
-      let label = '(ขาด)'; 
-      if (status === 'PRESENT') label = '(มา)';
-      else if (status === 'LATE') label = '(สาย)';
-      else if (status === 'SICK_LEAVE' || status === 'BUSINESS_LEAVE') label = '(ลา)';
+      
+      let label = '';
+      if (isEvening) {
+        label = '(เช็คชื่อในรายวิชา)';
+        eveningCount++;
+      } else {
+        if (status === 'PRESENT') label = '(มา)';
+        else if (status === 'LATE') label = '(สาย)';
+        else if (status === 'SICK_LEAVE' || status === 'BUSINESS_LEAVE') label = '(ลา)';
+        else label = '(ขาด)';
+      }
+      
       text += `${idx + 1}. ${s.name} ${label}\n`;
     });
     text += `--------------------------\n`;
-    const presents = filteredStudents.filter(s => currentSession[s.id] === 'PRESENT').length;
-    const absents = filteredStudents.filter(s => (currentSession[s.id] || 'ABSENT') === 'ABSENT').length;
-    const lates = filteredStudents.filter(s => currentSession[s.id] === 'LATE').length;
-    const leaves = filteredStudents.filter(s => currentSession[s.id] === 'SICK_LEAVE' || currentSession[s.id] === 'BUSINESS_LEAVE').length;
+    const presents = filteredStudents.filter(s => currentSession[s.id] === 'PRESENT' && !(s.level?.includes('ภาคค่ำ') || s.department?.includes('ภาคค่ำ') || s.room?.includes('ภาคค่ำ'))).length;
+    const absents = filteredStudents.filter(s => (currentSession[s.id] || 'ABSENT') === 'ABSENT' && !(s.level?.includes('ภาคค่ำ') || s.department?.includes('ภาคค่ำ') || s.room?.includes('ภาคค่ำ'))).length;
+    const lates = filteredStudents.filter(s => currentSession[s.id] === 'LATE' && !(s.level?.includes('ภาคค่ำ') || s.department?.includes('ภาคค่ำ') || s.room?.includes('ภาคค่ำ'))).length;
+    const leaves = filteredStudents.filter(s => (currentSession[s.id] === 'SICK_LEAVE' || currentSession[s.id] === 'BUSINESS_LEAVE') && !(s.level?.includes('ภาคค่ำ') || s.department?.includes('ภาคค่ำ') || s.room?.includes('ภาคค่ำ'))).length;
     
-    text += `มา: ${presents} | สาย: ${lates} | ลา: ${leaves} | ขาด: ${absents} | รวม: ${filteredStudents.length}\n`;
+    text += `มา: ${presents} | สาย: ${lates} | ลา: ${leaves} | ขาด: ${absents} | รวม: ${filteredStudents.length - eveningCount}\n`;
+    if (eveningCount > 0) {
+      text += `ภาคค่ำ (เช็คในรายวิชา): ${eveningCount}\n`;
+    }
     text += `ระบบ EduSmart CMS`;
     window.open(`https://line.me/R/msg/text/?${encodeURIComponent(text)}`, '_blank');
   };

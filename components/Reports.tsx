@@ -194,20 +194,36 @@ const Reports: React.FC<ReportsProps> = ({
       }
     });
 
-    const blockSermonScores = Object.entries(blockMistakes).reduce(
-      (acc, [block, set]) => {
-        const blockNum = Number(block);
-        if (globalActiveBlocks.has(blockNum)) {
-          acc[blockNum] = Number(
-            Math.max(0, 5 - (set.size / 18) * 5).toFixed(2),
-          );
-        } else {
-          acc[blockNum] = 0;
-        }
-        return acc;
-      },
-      {} as Record<number, number>,
-    );
+    // Calculate Morning Attendance by Block
+    const blockAttendance: Record<number, number> = {};
+    studyBlocks.forEach((block) => {
+      const recordsInBlock = morningRecords.filter((r) => {
+        const recordDate = r.date; // Use string comparison for accuracy
+        return recordDate >= block.startDate && recordDate <= block.endDate;
+      });
+
+      const blockPresents = recordsInBlock.filter(
+        (r) => r.status === "PRESENT",
+      ).length;
+      const blockScore = Number(((blockPresents / 18) * 5).toFixed(2));
+      blockAttendance[Number(block.id)] = blockScore;
+    });
+
+    const blockSermonScores: Record<number, number> = {};
+    studyBlocks.forEach((block) => {
+      const blockNum = Number(block.id);
+      if (globalActiveBlocks.has(blockNum)) {
+        // Count how many Sermon records are RECORDED for this block
+        const recordedCount = sermonRecords.filter(
+          (s) => s.sermonBlock === blockNum && s.status === "RECORDED"
+        ).length;
+        
+        // As per user request: Score = (Recorded Days * 5) / 18
+        blockSermonScores[blockNum] = Number(((recordedCount / 18) * 5).toFixed(2));
+      } else {
+        blockSermonScores[blockNum] = 0;
+      }
+    });
 
     // Total Sermon score across 5 blocks is max 25
     const sermonScore = Number(
@@ -219,25 +235,6 @@ const Reports: React.FC<ReportsProps> = ({
     const englishScore =
       englishScores.find((e) => String(e.studentId) === String(studentId))
         ?.score || 0;
-
-    // Calculate Morning Attendance by Block
-    const blockAttendance: Record<number, number> = {};
-    studyBlocks.forEach((block) => {
-      const start = new Date(block.startDate);
-      const end = new Date(block.endDate);
-
-      const recordsInBlock = morningRecords.filter((r) => {
-        const recordDate = new Date(r.date);
-        return recordDate >= start && recordDate <= end;
-      });
-
-      const blockPresents = recordsInBlock.filter(
-        (r) => r.status === "PRESENT",
-      ).length;
-      // Fixed: Use 18 days as denominator to match Sermon score calculation (18 days = 5 points)
-      const blockScore = Number(((blockPresents / 18) * 5).toFixed(2));
-      blockAttendance[block.id] = blockScore;
-    });
 
     return {
       rate,
