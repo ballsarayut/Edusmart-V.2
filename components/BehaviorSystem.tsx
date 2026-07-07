@@ -92,23 +92,25 @@ const BehaviorSystem: React.FC<BehaviorSystemProps> = ({ students, setStudents, 
     if (!selectedStudent) return;
 
     const studentRecords = behaviorRecords.filter(b => b.studentId === selectedStudent.id);
-    const deductRecords = studentRecords.filter(r => r.type === 'DEDUCT');
     
     let historyText = '';
-    if (deductRecords.length > 0) {
-      const sortedRecords = [...deductRecords].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    if (studentRecords.length > 0) {
+      const sortedRecords = [...studentRecords].sort((a, b) => new Date(b.timestamp || b.date).getTime() - new Date(a.timestamp || a.date).getTime());
       
       const latestRecord = sortedRecords[0];
-      historyText += `\n\n📌 โดนหักคะแนนล่าสุด:\n- ${latestRecord.reason} (หัก ${latestRecord.score} คะแนน) เมื่อ ${latestRecord.date}`;
+      const latestTypeStr = latestRecord.type === 'ADD' ? 'บวก' : 'หัก';
+      
+      historyText += `\n\n📌 รายการล่าสุด:\n- ${latestRecord.reason} (${latestTypeStr} ${latestRecord.score} คะแนน) เมื่อ ${latestRecord.date}`;
       
       if (sortedRecords.length > 1) {
-        historyText += `\n\nประวัติการหักคะแนนทั้งหมด:\n`;
+        historyText += `\n\nประวัติพฤติกรรมทั้งหมด:\n`;
         sortedRecords.forEach((r, idx) => {
-          historyText += `${idx + 1}. ${r.reason} (-${r.score}) [${r.date}]\n`;
+          const typeStr = r.type === 'ADD' ? '+' : '-';
+          historyText += `${idx + 1}. ${r.reason} (${typeStr}${r.score}) [${r.date}]\n`;
         });
       }
     } else {
-      historyText += `\n\n✅ ไม่มีประวัติการหักคะแนน`;
+      historyText += `\n\n✅ ไม่มีประวัติพฤติกรรม`;
     }
 
     const message = `แจ้งเตือนพฤติกรรม\nชื่อ: ${selectedStudent.name}\nรหัส: ${selectedStudent.studentId}\nระดับชั้น: ${selectedStudent.level} ${selectedStudent.department}\nคะแนนพฤติกรรมปัจจุบัน: ${selectedStudent.behaviorScore} คะแนน${historyText}\n\n- ระบบ EduSmart`;
