@@ -113,7 +113,7 @@ const BehaviorSystem: React.FC<BehaviorSystemProps> = ({ students, setStudents, 
       historyText += `\n\n✅ ไม่มีประวัติพฤติกรรม`;
     }
 
-    const message = `แจ้งเตือนพฤติกรรม\nชื่อ: ${selectedStudent.name}\nรหัส: ${selectedStudent.studentId}\nระดับชั้น: ${selectedStudent.level} ${selectedStudent.department}\nคะแนนพฤติกรรมปัจจุบัน: ${selectedStudent.behaviorScore} คะแนน${historyText}\n\n- ระบบ EduSmart`;
+    const message = `📢 แจ้งเตือนพฤติกรรม\nชื่อ: ${selectedStudent.name}\nรหัส: ${selectedStudent.studentId}\nระดับชั้น: ${selectedStudent.level} ${selectedStudent.department}\nคะแนนพฤติกรรมปัจจุบัน: ${selectedStudent.behaviorScore} คะแนน${historyText}\n\n- ระบบ EduSmart`;
     const lineUrl = `https://line.me/R/msg/text/?${encodeURIComponent(message)}`;
     window.open(lineUrl, '_blank');
   };
