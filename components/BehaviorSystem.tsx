@@ -90,7 +90,28 @@ const BehaviorSystem: React.FC<BehaviorSystemProps> = ({ students, setStudents, 
 
   const shareToLine = () => {
     if (!selectedStudent) return;
-    const message = `แจ้งเตือนพฤติกรรม\nชื่อ: ${selectedStudent.name}\nรหัส: ${selectedStudent.studentId}\nระดับชั้น: ${selectedStudent.level} ${selectedStudent.department}\nคะแนนพฤติกรรมปัจจุบัน: ${selectedStudent.behaviorScore} คะแนน\n\n- ระบบ EduSmart`;
+
+    const studentRecords = behaviorRecords.filter(b => b.studentId === selectedStudent.id);
+    const deductRecords = studentRecords.filter(r => r.type === 'DEDUCT');
+    
+    let historyText = '';
+    if (deductRecords.length > 0) {
+      const sortedRecords = [...deductRecords].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      
+      const latestRecord = sortedRecords[0];
+      historyText += `\n\n📌 โดนหักคะแนนล่าสุด:\n- ${latestRecord.reason} (หัก ${latestRecord.score} คะแนน) เมื่อ ${latestRecord.date}`;
+      
+      if (sortedRecords.length > 1) {
+        historyText += `\n\nประวัติการหักคะแนนทั้งหมด:\n`;
+        sortedRecords.forEach((r, idx) => {
+          historyText += `${idx + 1}. ${r.reason} (-${r.score}) [${r.date}]\n`;
+        });
+      }
+    } else {
+      historyText += `\n\n✅ ไม่มีประวัติการหักคะแนน`;
+    }
+
+    const message = `แจ้งเตือนพฤติกรรม\nชื่อ: ${selectedStudent.name}\nรหัส: ${selectedStudent.studentId}\nระดับชั้น: ${selectedStudent.level} ${selectedStudent.department}\nคะแนนพฤติกรรมปัจจุบัน: ${selectedStudent.behaviorScore} คะแนน${historyText}\n\n- ระบบ EduSmart`;
     const lineUrl = `https://line.me/R/msg/text/?${encodeURIComponent(message)}`;
     window.open(lineUrl, '_blank');
   };
