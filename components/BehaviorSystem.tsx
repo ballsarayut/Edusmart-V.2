@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { saveToFirestore, deleteFromFirestore } from '../firebaseService';
 import { Student, BehaviorRecord } from '../types';
-import { Award, PlusCircle, MinusCircle, FileText, Search, AlertCircle, Trash2, X, AlertTriangle, Check, RotateCcw } from 'lucide-react';
+import { Award, PlusCircle, MinusCircle, FileText, Search, AlertCircle, Trash2, X, AlertTriangle, Check, RotateCcw, MessageCircle } from 'lucide-react';
 
 interface BehaviorSystemProps {
   students: Student[];
@@ -88,6 +88,13 @@ const BehaviorSystem: React.FC<BehaviorSystemProps> = ({ students, setStudents, 
     return { label: 'เฝ้าระวัง', color: 'bg-red-100 text-red-800' };
   };
 
+  const shareToLine = () => {
+    if (!selectedStudent) return;
+    const message = `แจ้งเตือนพฤติกรรม\nชื่อ: ${selectedStudent.name}\nรหัส: ${selectedStudent.studentId}\nระดับชั้น: ${selectedStudent.level} ${selectedStudent.department}\nคะแนนพฤติกรรมปัจจุบัน: ${selectedStudent.behaviorScore} คะแนน\n\n- ระบบ EduSmart`;
+    const lineUrl = `https://line.me/R/msg/text/?${encodeURIComponent(message)}`;
+    window.open(lineUrl, '_blank');
+  };
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in duration-500">
       <div className="bg-white rounded-[32px] border border-slate-200 shadow-sm flex flex-col h-[calc(100vh-200px)] overflow-hidden">
@@ -141,9 +148,14 @@ const BehaviorSystem: React.FC<BehaviorSystemProps> = ({ students, setStudents, 
                     <p className="text-slate-500 font-bold uppercase text-xs tracking-widest mt-1">{selectedStudent.level} • {selectedStudent.department}</p>
                   </div>
                 </div>
-                <div className="text-right">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">คะแนนปัจจุบัน</p>
-                  <p className={`text-6xl font-black ${selectedStudent.behaviorScore >= 70 ? 'text-blue-600' : 'text-red-600'}`}>{selectedStudent.behaviorScore}</p>
+                <div className="flex flex-col items-end">
+                  <div className="text-right">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">คะแนนปัจจุบัน</p>
+                    <p className={`text-6xl font-black leading-none ${selectedStudent.behaviorScore >= 70 ? 'text-blue-600' : 'text-red-600'}`}>{selectedStudent.behaviorScore}</p>
+                  </div>
+                  <button onClick={shareToLine} className="mt-3 flex items-center gap-2 px-4 py-2 bg-[#00B900] text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-[#009900] transition-all shadow-lg shadow-green-100/50">
+                    <MessageCircle size={14} /> แชร์ผ่านไลน์
+                  </button>
                 </div>
               </div>
 
