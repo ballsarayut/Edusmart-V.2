@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useMemo } from 'react';
 import { saveToFirestore, saveMultipleToFirestore, deleteFromFirestore } from '../firebaseService';
-import { Student, ThaiLevel, Department } from '../types';
+import { Student, ThaiLevel, Department, STANDARD_LEVELS, isEveningStudent, getCleanLevel } from '../types';
 import { MOCK_STUDENTS } from '../data/mockData';
 import * as XLSX from 'xlsx';
 import { 
@@ -34,6 +34,7 @@ interface StudentManagementProps {
 
 const StudentManagement: React.FC<StudentManagementProps> = ({ students, setStudents, isSyncing = false, isLoading = false }) => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [filterShift, setFilterShift] = useState<'ALL' | 'NORMAL' | 'EVENING'>('ALL');
   const [isDeleting, setIsDeleting] = useState(false);
   const [isSeeding, setIsSeeding] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -58,18 +59,23 @@ const StudentManagement: React.FC<StudentManagementProps> = ({ students, setStud
     room: '1'
   });
 
-  const filteredStudents = students.filter(s => 
-    s.name.toLowerCase().includes(searchTerm.toLowerCase()) || s.studentId.includes(searchTerm)
-  );
+  const normalStudentsCount = useMemo(() => students.filter(s => !isEveningStudent(s)).length, [students]);
+  const eveningStudentsCount = useMemo(() => students.filter(s => isEveningStudent(s)).length, [students]);
+
+  const filteredStudents = useMemo(() => {
+    return students.filter(s => {
+      const matchesSearch = s.name.toLowerCase().includes(searchTerm.toLowerCase()) || s.studentId.includes(searchTerm);
+      if (!matchesSearch) return false;
+      if (filterShift === 'NORMAL') return !isEveningStudent(s);
+      if (filterShift === 'EVENING') return isEveningStudent(s);
+      return true;
+    });
+  }, [students, searchTerm, filterShift]);
 
   const handleOpenEdit = (student: Student) => {
-    let cleanLevel = student.level;
-    const hasEvening = student.level.includes('ภาคค่ำ') || student.room.includes('ภาคค่ำ') || student.department.includes('ภาคค่ำ');
+    const hasEvening = isEveningStudent(student);
     setIsEvening(hasEvening);
-    
-    if (cleanLevel.includes('ภาคค่ำ')) {
-      cleanLevel = cleanLevel.replace(' ภาคค่ำ', '').replace('ภาคค่ำ', '').trim();
-    }
+    const cleanLevel = getCleanLevel(student.level);
     setFormData({ ...student, level: cleanLevel });
     setEditingStudentId(student.id);
     setShowModal('EDIT');
@@ -90,18 +96,10 @@ const StudentManagement: React.FC<StudentManagementProps> = ({ students, setStud
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    let nLevel = String(formData.level || '').trim();
-    nLevel = nLevel.replace(/^(ปว[ชส])\.?\s*([1-3])$/, '$1. $2');
-    
+    const nLevel = getCleanLevel(String(formData.level || ''));
     let nRoom = String(formData.room || '1').trim();
-    nRoom = nRoom.replace(/^ห้อง\s*([0-9]+)$/, '$1');
-    nRoom = nRoom.replace(/\s+/g, '');
-
-    if (isEvening && !nLevel.includes('ภาคค่ำ')) {
-      nLevel += ' ภาคค่ำ';
-    } else if (!isEvening && nLevel.includes('ภาคค่ำ')) {
-      nLevel = nLevel.replace(' ภาคค่ำ', '').replace('ภาคค่ำ', '').trim();
-    }
+    nRoom = nRoom.replace(/ภาคค่ำ/g, '').replace(/^ห้อง\s*([0-9]+)$/, '$1').replace(/\s+/g, '');
+    if (!nRoom) nRoom = '1';
 
     if (showModal === 'ADD') {
       const newStudent: Student = {
@@ -111,13 +109,20 @@ const StudentManagement: React.FC<StudentManagementProps> = ({ students, setStud
         level: nLevel,
         department: formData.department || '',
         room: nRoom,
-        behaviorScore: 100
+        behaviorScore: 100,
+        shift: isEvening ? 'EVENING' : 'NORMAL'
       };
       // Save to Firestore
       saveToFirestore('students', newStudent);
       setStudents(prev => [newStudent, ...prev]);
     } else if (showModal === 'EDIT' && editingStudentId) {
-      const updatedStudent = { ...formData, id: editingStudentId, level: nLevel, room: nRoom } as Student;
+      const updatedStudent: Student = { 
+        ...formData, 
+        id: editingStudentId, 
+        level: nLevel, 
+        room: nRoom,
+        shift: isEvening ? 'EVENING' : 'NORMAL'
+      } as Student;
       // Save to Firestore
       saveToFirestore('students', updatedStudent);
       setStudents(prev => prev.map(s => s.id === editingStudentId ? updatedStudent : s));
@@ -317,6 +322,45 @@ const StudentManagement: React.FC<StudentManagementProps> = ({ students, setStud
         </div>
       </div>
 
+      {/* Shift Filter Tabs */}
+      <div className="flex flex-wrap items-center justify-between gap-4 px-1">
+        <div className="flex items-center gap-2 p-1 bg-slate-100 rounded-2xl">
+          <button
+            type="button"
+            onClick={() => setFilterShift('ALL')}
+            className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${
+              filterShift === 'ALL'
+                ? 'bg-white text-slate-900 shadow-sm'
+                : 'text-slate-500 hover:text-slate-900'
+            }`}
+          >
+            ทั้งหมด ({students.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setFilterShift('NORMAL')}
+            className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 ${
+              filterShift === 'NORMAL'
+                ? 'bg-white text-emerald-600 shadow-sm'
+                : 'text-slate-500 hover:text-slate-900'
+            }`}
+          >
+            ☀️ ภาคปกติ ({normalStudentsCount})
+          </button>
+          <button
+            type="button"
+            onClick={() => setFilterShift('EVENING')}
+            className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 ${
+              filterShift === 'EVENING'
+                ? 'bg-indigo-900 text-white shadow-sm'
+                : 'text-slate-500 hover:text-slate-900'
+            }`}
+          >
+            🌙 ภาคค่ำ ({eveningStudentsCount})
+          </button>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {isLoading ? (
           Array.from({ length: 6 }).map((_, i) => (
@@ -330,28 +374,42 @@ const StudentManagement: React.FC<StudentManagementProps> = ({ students, setStud
                </div>
             </div>
           ))
-        ) : filteredStudents.length > 0 ? filteredStudents.map((s) => (
-          <div key={s.id} className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm flex flex-col justify-between group hover:border-blue-400 transition-all relative overflow-hidden">
-            <div className="flex items-start gap-4">
-              <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-300 font-black text-2xl group-hover:bg-blue-600 group-hover:text-white transition-all shrink-0 font-heading">
-                {s.name.charAt(0)}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="font-black text-slate-900 text-base leading-tight truncate font-heading">{s.name}</p>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">ID: {s.studentId}</p>
-                <div className="flex flex-wrap gap-1.5 mt-3">
-                  <span className="px-2 py-0.5 bg-slate-50 border border-slate-100 rounded-md text-[8px] font-black text-slate-500 uppercase">{s.level}</span>
-                  <span className="px-2 py-0.5 bg-slate-50 border border-slate-100 rounded-md text-[8px] font-black text-slate-500 uppercase">{s.department}</span>
-                  <span className="px-2 py-0.5 bg-blue-50 border border-blue-100 rounded-md text-[8px] font-black text-blue-600 uppercase">ห้อง {s.room}</span>
+        ) : filteredStudents.length > 0 ? filteredStudents.map((s) => {
+          const isEve = isEveningStudent(s);
+          return (
+            <div key={s.id} className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm flex flex-col justify-between group hover:border-blue-400 transition-all relative overflow-hidden">
+              <div className="flex items-start gap-4">
+                <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-300 font-black text-2xl group-hover:bg-blue-600 group-hover:text-white transition-all shrink-0 font-heading">
+                  {s.name.charAt(0)}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className="font-black text-slate-900 text-base leading-tight truncate font-heading">{s.name}</p>
+                    {isEve ? (
+                      <span className="px-2 py-0.5 bg-indigo-100 border border-indigo-200 text-indigo-800 rounded text-[9px] font-black shrink-0">
+                        ภาคค่ำ
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 bg-emerald-100 border border-emerald-200 text-emerald-800 rounded text-[9px] font-black shrink-0">
+                        ภาคปกติ
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">ID: {s.studentId}</p>
+                  <div className="flex flex-wrap gap-1.5 mt-3">
+                    <span className="px-2 py-0.5 bg-slate-50 border border-slate-100 rounded-md text-[8px] font-black text-slate-500 uppercase">{s.level}</span>
+                    <span className="px-2 py-0.5 bg-slate-50 border border-slate-100 rounded-md text-[8px] font-black text-slate-500 uppercase">{s.department}</span>
+                    <span className="px-2 py-0.5 bg-blue-50 border border-blue-100 rounded-md text-[8px] font-black text-blue-600 uppercase">ห้อง {s.room}</span>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-1 shrink-0">
+                  <button onClick={() => handleOpenEdit(s)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"><Edit3 size={18} /></button>
+                  <button onClick={() => setStudentToDelete(s)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"><Trash2 size={18} /></button>
                 </div>
               </div>
-              <div className="flex flex-col gap-1 shrink-0">
-                <button onClick={() => handleOpenEdit(s)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"><Edit3 size={18} /></button>
-                <button onClick={() => setStudentToDelete(s)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"><Trash2 size={18} /></button>
-              </div>
             </div>
-          </div>
-        )) : students.length === 0 ? (
+          );
+        }) : students.length === 0 ? (
           <div className="col-span-full py-20 bg-slate-50 rounded-[40px] border-2 border-dashed border-slate-200 text-center flex flex-col items-center gap-6">
             <div className="w-24 h-24 bg-white rounded-3xl shadow-xl flex items-center justify-center text-slate-200">
                <Users size={48} />

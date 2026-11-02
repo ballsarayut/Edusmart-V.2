@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { saveToFirestore, deleteFromFirestore } from '../firebaseService';
-import { NewsRecord, Student, Department, ThaiLevel } from '../types';
+import { NewsRecord, Student, Department, ThaiLevel, STANDARD_LEVELS, STANDARD_ROOMS, getCleanLevel } from '../types';
 import { 
   Megaphone, Plus, Search, X, Send, Users, User, Layout, 
   AlertCircle, Calendar, Trash2, Edit3, Loader2, Sparkles, Check,
@@ -35,9 +35,35 @@ const NewsBroadcast: React.FC<NewsBroadcastProps> = ({ students, news, setNews, 
     targetRoom: '1'
   });
 
-  const availableDepts = useMemo(() => Array.from(new Set(students.map(s => s.department))).map(String).sort(), [students]);
-  const availableLevels = useMemo(() => Array.from(new Set(students.map(s => s.level))).map(String).sort(), [students]);
-  const availableRooms = useMemo(() => Array.from(new Set(students.map(s => s.room))).map(String).sort((a,b) => parseInt(a)-parseInt(b)), [students]);
+  const availableDepts = useMemo(() => {
+    const depts = new Set<string>(students.map(s => s.department).filter(Boolean));
+    Object.values(Department).forEach(d => depts.add(d));
+    return Array.from(depts).sort((a: string, b: string) => a.localeCompare(b));
+  }, [students]);
+
+  const availableLevels = useMemo(() => {
+    const studentLevels = students.map(s => getCleanLevel(s.level)).filter(Boolean);
+    const set = new Set<string>([...STANDARD_LEVELS, ...studentLevels]);
+    return Array.from(set).sort((a: string, b: string) => {
+      const idxA = STANDARD_LEVELS.indexOf(a);
+      const idxB = STANDARD_LEVELS.indexOf(b);
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return a.localeCompare(b);
+    });
+  }, [students]);
+
+  const availableRooms = useMemo(() => {
+    const rms = new Set<string>(students.map(s => s.room).filter(Boolean));
+    STANDARD_ROOMS.forEach(r => rms.add(r));
+    return Array.from(rms).sort((a: string, b: string) => {
+      const na = parseInt(a);
+      const nb = parseInt(b);
+      if (!isNaN(na) && !isNaN(nb)) return na - nb;
+      return a.localeCompare(b);
+    });
+  }, [students]);
 
   // ค้นหานักเรียนจากรหัสที่กำลังพิมพ์
   const foundStudent = useMemo(() => {

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { saveToFirestore } from '../firebaseService';
-import { Student, AttendanceRecord, SystemConfig } from '../types';
+import { Student, AttendanceRecord, SystemConfig, isEveningStudent } from '../types';
 import { 
   Scan, Loader2, Check, X, ShieldAlert, Sparkles, 
   History, Clock, Camera, Keyboard, AlertCircle, RefreshCw,
@@ -120,6 +120,10 @@ const QuickScan: React.FC<QuickScanProps> = ({ students, attendanceRecords, setA
     const student = students.find(s => String(s.studentId) === cleanInput || String(s.id) === cleanInput);
 
     if (student) {
+      if (isEveningStudent(student)) {
+        setScanError(`นักเรียน ${student.name} (รหัส ${student.studentId}) เป็นนักเรียนภาคค่ำ ไม่ต้องเช็คชื่อเข้าแถวตอนเช้า`);
+        return;
+      }
       const now = new Date();
       const timestamp = now.toLocaleString('th-TH');
       const [limitHour, limitMin] = config.morningTimeLimit.split(':').map(Number);

@@ -37,9 +37,20 @@ export const MOCK_USERS: User[] = [
 ];
 
 export const MOCK_STUDENTS: Student[] = [
+  // ปวช. 1 ช่างกลโรงงาน
+  { id: '6201', studentId: '6201', name: 'นายธนดล มงคลสุข', level: ThaiLevel.VC1, department: Department.MECH, room: '1', behaviorScore: 100, shift: 'NORMAL' },
+  { id: '6202', studentId: '6202', name: 'นายกิตติศักดิ์ พรหมมินทร์', level: ThaiLevel.VC1, department: Department.MECH, room: '2', behaviorScore: 100, shift: 'NORMAL' },
+  // ปวช. 1 ช่างไฟฟ้า
+  { id: '6203', studentId: '6203', name: 'นางสาวพิมพิศา ชัยชนะ', level: ThaiLevel.VC1, department: Department.ELEC, room: '1', behaviorScore: 100, shift: 'NORMAL' },
+  // ปวส. 1 เทคนิคเครื่องกล
+  { id: '6301', studentId: '6301', name: 'นายปัญญาวุธ เกตุแก้ว', level: ThaiLevel.HVC1, department: Department.MACHINE, room: '1', behaviorScore: 100, shift: 'NORMAL' },
+  { id: '6302', studentId: '6302', name: 'นายวรเมธ คงสมบูรณ์', level: ThaiLevel.HVC1, department: Department.MACHINE, room: '2', behaviorScore: 100, shift: 'NORMAL' },
+  // ปวส. 2 ภาคค่ำ
+  { id: '6401', studentId: '6401', name: 'นายธนาธิป ภาคค่ำวัฒนา', level: ThaiLevel.HVC2, department: Department.MECH, room: '1', behaviorScore: 100, shift: 'EVENING' },
+
   // ปวช. 2 ช่างกลโรงงาน (Page 1)
-  { id: '6073', studentId: '6073', name: 'นายปิยพล หวานฉ่ำ', level: ThaiLevel.VC2, department: Department.MECH, room: '1', behaviorScore: 100 },
-  { id: '6075', studentId: '6075', name: 'นายจิรวงศ์ ไชยยศ', level: ThaiLevel.VC2, department: Department.MECH, room: '1', behaviorScore: 100 },
+  { id: '6073', studentId: '6073', name: 'นายปิยพล หวานฉ่ำ', level: ThaiLevel.VC2, department: Department.MECH, room: '1', behaviorScore: 100, shift: 'NORMAL' },
+  { id: '6075', studentId: '6075', name: 'นายจิรวงศ์ ไชยยศ', level: ThaiLevel.VC2, department: Department.MECH, room: '1', behaviorScore: 100, shift: 'NORMAL' },
   { id: '6076', studentId: '6076', name: 'นายสิริวิชญ์ ถิ่นท่าเรือ', level: ThaiLevel.VC2, department: Department.MECH, room: '1', behaviorScore: 100 },
   { id: '6077', studentId: '6077', name: 'นายกิตติวัฒน์ มุณีจันทร์', level: ThaiLevel.VC2, department: Department.MECH, room: '1', behaviorScore: 100 },
   { id: '6078', studentId: '6078', name: 'นายธนกฤต กั้วงซ้วน', level: ThaiLevel.VC2, department: Department.MECH, room: '1', behaviorScore: 100 },

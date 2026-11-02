@@ -49,6 +49,36 @@ export enum ThaiLevel {
   HVC2 = 'ปวส. 2'
 }
 
+export const STANDARD_LEVELS: string[] = [
+  'ปวช. 1',
+  'ปวช. 2',
+  'ปวช. 3',
+  'ปวส. 1',
+  'ปวส. 2'
+];
+
+export const STANDARD_ROOMS: string[] = ['1', '2', '3', '4'];
+
+export type StudentShift = 'NORMAL' | 'EVENING';
+
+export const isEveningStudent = (s: { shift?: string; level?: string; room?: string; department?: string }): boolean => {
+  if (s.shift === 'EVENING') return true;
+  const l = String(s.level || '');
+  const r = String(s.room || '');
+  const d = String(s.department || '');
+  return l.includes('ภาคค่ำ') || r.includes('ภาคค่ำ') || d.includes('ภาคค่ำ');
+};
+
+export const isNormalStudent = (s: { shift?: string; level?: string; room?: string; department?: string }): boolean => {
+  return !isEveningStudent(s);
+};
+
+export const getCleanLevel = (level: string): string => {
+  let cleaned = String(level || '').replace(/ภาคค่ำ/g, '').trim();
+  cleaned = cleaned.replace(/^(ปว[ชส])\.?\s*([1-3])$/, '$1. $2');
+  return cleaned || level;
+};
+
 export enum Department {
   IT = 'เทคโนโลยีสารสนเทศ',
   AUTO = 'ช่างยนต์',
@@ -69,6 +99,7 @@ export interface Student {
   department: string; 
   room: string;
   behaviorScore: number;
+  shift?: StudentShift;
 }
 
 export interface AttendanceRecord {

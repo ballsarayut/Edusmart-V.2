@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { saveToFirestore, saveMultipleToFirestore, deleteFromFirestore, deleteMultipleFromFirestore } from '../firebaseService';
-import { Student, AttendanceRecord, AttendanceStatus } from '../types';
+import { Student, AttendanceRecord, AttendanceStatus, Department, STANDARD_LEVELS, STANDARD_ROOMS, isEveningStudent, getCleanLevel } from '../types';
 import { STATUS_LABELS } from '../constants';
 import { 
   Search, Save, CheckCircle2, History, ClipboardCheck, 
@@ -23,13 +23,44 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
   attendanceRecords, 
   setAttendanceRecords
 }) => {
-  const availableLevels = useMemo(() => Array.from(new Set(students.map(s => s.level))).map(String).sort(), [students]);
-  const availableDepts = useMemo(() => Array.from(new Set(students.map(s => s.department))).map(String).sort(), [students]);
-  const availableRooms = useMemo(() => Array.from(new Set(students.map(s => s.room))).map(String).sort((a,b) => parseInt(a)-parseInt(b)), [students]);
+  // Morning assembly is strictly for normal shift (ภาคปกติ). Exclude evening students completely!
+  const morningStudents = useMemo(() => {
+    return students.filter(s => !isEveningStudent(s));
+  }, [students]);
 
-  const [level, setLevel] = useState<string>(availableLevels[0] || '');
+  const availableLevels = useMemo(() => {
+    const studentLevels = morningStudents.map(s => getCleanLevel(s.level)).filter(Boolean);
+    const set = new Set([...STANDARD_LEVELS, ...studentLevels]);
+    return Array.from(set).sort((a, b) => {
+      const idxA = STANDARD_LEVELS.indexOf(a);
+      const idxB = STANDARD_LEVELS.indexOf(b);
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return a.localeCompare(b);
+    });
+  }, [morningStudents]);
+
+  const availableDepts = useMemo(() => {
+    const studentDepts = morningStudents.map(s => s.department).filter(Boolean);
+    const set = new Set([...Object.values(Department), ...studentDepts]);
+    return Array.from(set).sort();
+  }, [morningStudents]);
+
+  const availableRooms = useMemo(() => {
+    const studentRooms = morningStudents.map(s => s.room).filter(Boolean);
+    const set = new Set([...STANDARD_ROOMS, ...studentRooms]);
+    return Array.from(set).sort((a, b) => {
+      const na = parseInt(a);
+      const nb = parseInt(b);
+      if (!isNaN(na) && !isNaN(nb)) return na - nb;
+      return a.localeCompare(b);
+    });
+  }, [morningStudents]);
+
+  const [level, setLevel] = useState<string>(availableLevels[0] || 'ปวช. 1');
   const [dept, setDept] = useState<string>(availableDepts[0] || '');
-  const [room, setRoom] = useState<string>(availableRooms[0] || '');
+  const [room, setRoom] = useState<string>(availableRooms[0] || '1');
   
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedHistoryDate, setSelectedHistoryDate] = useState<string>('');
@@ -79,19 +110,19 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
     return () => clearInterval(focusInterval);
   }, [isScannerEnabled, viewMode]);
 
-  const filteredStudents = students.filter(s => 
+  const filteredStudents = morningStudents.filter(s => 
     s.level === level && s.department === dept && s.room === room &&
     (s.name.toLowerCase().includes(searchTerm.toLowerCase()) || s.studentId.includes(searchTerm))
   );
 
   const historyRecords = useMemo(() => {
     return attendanceRecords.filter(record => {
-      const student = students.find(s => s.id === record.studentId);
+      const student = morningStudents.find(s => s.id === record.studentId);
       const matchesFilter = record.type === 'MORNING' && student?.level === level && student?.department === dept && student?.room === room;
       const matchesDate = selectedHistoryDate ? record.date === selectedHistoryDate : true;
       return matchesFilter && matchesDate;
     }).sort((a, b) => b.date.localeCompare(a.date));
-  }, [attendanceRecords, students, level, dept, room, selectedHistoryDate]);
+  }, [attendanceRecords, morningStudents, level, dept, room, selectedHistoryDate]);
 
   const handleStatusChange = (studentId: string, status: AttendanceStatus) => {
     setCurrentSession(prev => ({ ...prev, [studentId]: status }));
@@ -103,7 +134,7 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
     if (!barcodeInput) return;
 
     // ค้นหานักเรียนจาก studentId
-    const scannedStudent = students.find(s => s.studentId === barcodeInput.trim());
+    const scannedStudent = morningStudents.find(s => s.studentId === barcodeInput.trim());
     
     if (scannedStudent) {
       handleStatusChange(scannedStudent.id, 'PRESENT');
@@ -167,40 +198,28 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
       month: 'long', 
       year: 'numeric' 
     });
-    let text = `📋 รายงานเช็คชื่อเข้าแถว\n`;
+    let text = `📋 รายงานเช็คชื่อเข้าแถว (ภาคปกติ)\n`;
     text += `🗓️ วันที่: ${rawDate}\n`;
     text += `🏫 ${level} / ${dept} (ห้อง ${room})\n`;
     text += `--------------------------\n`;
     
-    let eveningCount = 0;
-    
     filteredStudents.forEach((s, idx) => {
-      const isEvening = s.level?.includes('ภาคค่ำ') || s.department?.includes('ภาคค่ำ') || s.room?.includes('ภาคค่ำ');
       const status = currentSession[s.id] || 'ABSENT';
-      
       let label = '';
-      if (isEvening) {
-        label = '(เช็คชื่อในรายวิชา)';
-        eveningCount++;
-      } else {
-        if (status === 'PRESENT') label = '(มา)';
-        else if (status === 'LATE') label = '(สาย)';
-        else if (status === 'SICK_LEAVE' || status === 'BUSINESS_LEAVE') label = '(ลา)';
-        else label = '(ขาด)';
-      }
+      if (status === 'PRESENT') label = '(มา)';
+      else if (status === 'LATE') label = '(สาย)';
+      else if (status === 'SICK_LEAVE' || status === 'BUSINESS_LEAVE') label = '(ลา)';
+      else label = '(ขาด)';
       
       text += `${idx + 1}. ${s.name} ${label}\n`;
     });
     text += `--------------------------\n`;
-    const presents = filteredStudents.filter(s => currentSession[s.id] === 'PRESENT' && !(s.level?.includes('ภาคค่ำ') || s.department?.includes('ภาคค่ำ') || s.room?.includes('ภาคค่ำ'))).length;
-    const absents = filteredStudents.filter(s => (currentSession[s.id] || 'ABSENT') === 'ABSENT' && !(s.level?.includes('ภาคค่ำ') || s.department?.includes('ภาคค่ำ') || s.room?.includes('ภาคค่ำ'))).length;
-    const lates = filteredStudents.filter(s => currentSession[s.id] === 'LATE' && !(s.level?.includes('ภาคค่ำ') || s.department?.includes('ภาคค่ำ') || s.room?.includes('ภาคค่ำ'))).length;
-    const leaves = filteredStudents.filter(s => (currentSession[s.id] === 'SICK_LEAVE' || currentSession[s.id] === 'BUSINESS_LEAVE') && !(s.level?.includes('ภาคค่ำ') || s.department?.includes('ภาคค่ำ') || s.room?.includes('ภาคค่ำ'))).length;
+    const presents = filteredStudents.filter(s => currentSession[s.id] === 'PRESENT').length;
+    const absents = filteredStudents.filter(s => (currentSession[s.id] || 'ABSENT') === 'ABSENT').length;
+    const lates = filteredStudents.filter(s => currentSession[s.id] === 'LATE').length;
+    const leaves = filteredStudents.filter(s => currentSession[s.id] === 'SICK_LEAVE' || currentSession[s.id] === 'BUSINESS_LEAVE').length;
     
-    text += `มา: ${presents} | สาย: ${lates} | ลา: ${leaves} | ขาด: ${absents} | รวม: ${filteredStudents.length - eveningCount}\n`;
-    if (eveningCount > 0) {
-      text += `ภาคค่ำ (เช็คในรายวิชา): ${eveningCount}\n`;
-    }
+    text += `มา: ${presents} | สาย: ${lates} | ลา: ${leaves} | ขาด: ${absents} | รวม: ${filteredStudents.length}\n`;
     text += `ระบบ EduSmart CMS`;
     window.open(`https://line.me/R/msg/text/?${encodeURIComponent(text)}`, '_blank');
   };

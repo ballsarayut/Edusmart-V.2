@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { Student, AttendanceRecord } from '../types';
+import { Student, AttendanceRecord, Department, STANDARD_LEVELS, STANDARD_ROOMS, isEveningStudent, getCleanLevel } from '../types';
 import { 
   Star, Search, Download, TrendingUp, User, 
   Layers, CheckCircle2, AlertCircle, GraduationCap, Trophy
@@ -12,13 +12,48 @@ interface SermonJournalSummaryProps {
 }
 
 const SermonJournalSummary: React.FC<SermonJournalSummaryProps> = ({ students, attendance }) => {
-  const availableLevels = useMemo(() => Array.from(new Set(students.map(s => s.level))).map(String).sort(), [students]);
-  const availableDepts = useMemo(() => Array.from(new Set(students.map(s => s.department))).map(String).sort(), [students]);
-  const availableRooms = useMemo(() => Array.from(new Set(students.map(s => s.room))).map(String).sort((a,b) => parseInt(a)-parseInt(b)), [students]);
+  const [selectedShift, setSelectedShift] = useState<'NORMAL' | 'EVENING'>('NORMAL');
 
-  const [selectedLevel, setSelectedLevel] = useState<string>(availableLevels[0] || '');
+  const shiftStudents = useMemo(() => {
+    return students.filter(s => {
+      const isEve = isEveningStudent(s);
+      return selectedShift === 'EVENING' ? isEve : !isEve;
+    });
+  }, [students, selectedShift]);
+
+  const availableLevels = useMemo(() => {
+    const studentLevels = shiftStudents.map(s => getCleanLevel(s.level)).filter(Boolean);
+    const set = new Set<string>([...STANDARD_LEVELS, ...studentLevels]);
+    return Array.from(set).sort((a: string, b: string) => {
+      const idxA = STANDARD_LEVELS.indexOf(a);
+      const idxB = STANDARD_LEVELS.indexOf(b);
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return a.localeCompare(b);
+    });
+  }, [shiftStudents]);
+
+  const availableDepts = useMemo(() => {
+    const depts = new Set<string>(shiftStudents.map(s => s.department).filter(Boolean));
+    Object.values(Department).forEach(d => depts.add(d));
+    return Array.from(depts).sort((a: string, b: string) => a.localeCompare(b));
+  }, [shiftStudents]);
+
+  const availableRooms = useMemo(() => {
+    const rms = new Set<string>(shiftStudents.map(s => s.room).filter(Boolean));
+    STANDARD_ROOMS.forEach(r => rms.add(r));
+    return Array.from(rms).sort((a: string, b: string) => {
+      const na = parseInt(a);
+      const nb = parseInt(b);
+      if (!isNaN(na) && !isNaN(nb)) return na - nb;
+      return a.localeCompare(b);
+    });
+  }, [shiftStudents]);
+
+  const [selectedLevel, setSelectedLevel] = useState<string>(availableLevels[0] || 'ปวช. 1');
   const [selectedDept, setSelectedDept] = useState<string>(availableDepts[0] || '');
-  const [selectedRoom, setSelectedRoom] = useState<string>(availableRooms[0] || '');
+  const [selectedRoom, setSelectedRoom] = useState<string>(availableRooms[0] || '1');
   const [searchTerm, setSearchTerm] = useState('');
 
   const globalActiveBlocks = useMemo(() => {
@@ -62,13 +97,13 @@ const SermonJournalSummary: React.FC<SermonJournalSummaryProps> = ({ students, a
   };
 
   const filteredStudents = useMemo(() => {
-    return students.filter(s => 
+    return shiftStudents.filter(s => 
       s.level === selectedLevel && 
       s.department === selectedDept && 
       s.room === selectedRoom &&
       (s.name.toLowerCase().includes(searchTerm.toLowerCase()) || s.studentId.includes(searchTerm))
     );
-  }, [students, selectedLevel, selectedDept, selectedRoom, searchTerm]);
+  }, [shiftStudents, selectedLevel, selectedDept, selectedRoom, searchTerm]);
 
   const roomAverage = useMemo(() => {
     if (filteredStudents.length === 0) return "0.00";
@@ -129,7 +164,38 @@ const SermonJournalSummary: React.FC<SermonJournalSummaryProps> = ({ students, a
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 pt-8 border-t border-slate-50 relative z-10">
+        {/* Shift selector: ภาคปกติ vs ภาคค่ำ */}
+        <div className="flex flex-wrap items-center justify-between gap-4 pt-6 border-t border-slate-100">
+          <div className="flex items-center gap-2 p-1 bg-slate-100 rounded-2xl w-fit">
+            <button
+              type="button"
+              onClick={() => setSelectedShift('NORMAL')}
+              className={`px-5 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 ${
+                selectedShift === 'NORMAL'
+                  ? 'bg-white text-indigo-600 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-900'
+              }`}
+            >
+              ☀️ ภาคปกติ
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedShift('EVENING')}
+              className={`px-5 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 ${
+                selectedShift === 'EVENING'
+                  ? 'bg-indigo-900 text-white shadow-sm'
+                  : 'text-slate-500 hover:text-slate-900'
+              }`}
+            >
+              🌙 ภาคค่ำ
+            </button>
+          </div>
+          <div className="text-xs font-bold text-slate-400">
+            {selectedShift === 'NORMAL' ? 'สรุปคะแนนเฉพาะนักเรียนภาคปกติ' : 'สรุปคะแนนเฉพาะนักเรียนภาคค่ำ'}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 pt-6 relative z-10">
           <div className="space-y-1.5">
             <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1 font-heading">ระดับชั้น</label>
             <select value={selectedLevel} onChange={(e) => setSelectedLevel(e.target.value)} className="w-full bg-slate-50 border-2 border-transparent focus:border-indigo-600 rounded-2xl px-5 py-3.5 font-bold text-slate-900 outline-none appearance-none cursor-pointer">

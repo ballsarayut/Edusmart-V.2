@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { Student, AttendanceRecord, StudyBlock } from '../types';
+import { Student, AttendanceRecord, StudyBlock, Department, STANDARD_LEVELS, STANDARD_ROOMS, isEveningStudent, getCleanLevel } from '../types';
 import { Star, Search, Download, TrendingUp, Sun, User, Calendar, Layers, CheckCircle2, AlertCircle } from 'lucide-react';
 
 interface MorningScoreSummaryProps {
@@ -10,16 +10,47 @@ interface MorningScoreSummaryProps {
 }
 
 const MorningScoreSummary: React.FC<MorningScoreSummaryProps> = ({ students, attendance, studyBlocks }) => {
-  const availableLevels = useMemo(() => Array.from(new Set(students.map(s => s.level))).sort(), [students]);
-  const availableDepts = useMemo(() => Array.from(new Set(students.map(s => s.department))).sort(), [students]);
-  const availableRooms = useMemo(() => Array.from(new Set(students.map(s => s.room))).sort((a, b) => parseInt(a as string) - parseInt(b as string)), [students]);
+  // Morning score summary is strictly for normal shift (ภาคปกติ)
+  const morningStudents = useMemo(() => {
+    return students.filter(s => !isEveningStudent(s));
+  }, [students]);
+
+  const availableLevels = useMemo(() => {
+    const studentLevels = morningStudents.map(s => getCleanLevel(s.level)).filter(Boolean);
+    const set = new Set([...STANDARD_LEVELS, ...studentLevels]);
+    return Array.from(set).sort((a, b) => {
+      const idxA = STANDARD_LEVELS.indexOf(a);
+      const idxB = STANDARD_LEVELS.indexOf(b);
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return a.localeCompare(b);
+    });
+  }, [morningStudents]);
+
+  const availableDepts = useMemo(() => {
+    const studentDepts = morningStudents.map(s => s.department).filter(Boolean);
+    const set = new Set([...Object.values(Department), ...studentDepts]);
+    return Array.from(set).sort();
+  }, [morningStudents]);
+
+  const availableRooms = useMemo(() => {
+    const studentRooms = morningStudents.map(s => s.room).filter(Boolean);
+    const set = new Set([...STANDARD_ROOMS, ...studentRooms]);
+    return Array.from(set).sort((a, b) => {
+      const na = parseInt(a as string);
+      const nb = parseInt(b as string);
+      if (!isNaN(na) && !isNaN(nb)) return na - nb;
+      return String(a).localeCompare(String(b));
+    });
+  }, [morningStudents]);
 
   const [selectedBlockId, setSelectedBlockId] = useState<number | 'ALL'>(
     studyBlocks.find(b => b.isActive)?.id || (studyBlocks.length > 0 ? studyBlocks[0].id : 'ALL')
   );
-  const [selectedLevel, setSelectedLevel] = useState<string>(availableLevels[0] || '');
+  const [selectedLevel, setSelectedLevel] = useState<string>(availableLevels[0] || 'ปวช. 1');
   const [selectedDept, setSelectedDept] = useState<string>(availableDepts[0] || '');
-  const [selectedRoom, setSelectedRoom] = useState<string>(availableRooms[0] || '');
+  const [selectedRoom, setSelectedRoom] = useState<string>(availableRooms[0] || '1');
   const [searchTerm, setSearchTerm] = useState('');
 
   const currentBlock = useMemo(() => 
@@ -71,13 +102,13 @@ const MorningScoreSummary: React.FC<MorningScoreSummaryProps> = ({ students, att
   };
 
   const filteredStudents = useMemo(() => {
-    return students.filter(s => 
+    return morningStudents.filter(s => 
       s.level === selectedLevel && 
       s.department === selectedDept && 
       s.room === selectedRoom &&
       (s.name.toLowerCase().includes(searchTerm.toLowerCase()) || s.studentId.includes(searchTerm))
     );
-  }, [students, selectedLevel, selectedDept, selectedRoom, searchTerm]);
+  }, [morningStudents, selectedLevel, selectedDept, selectedRoom, searchTerm]);
 
   const roomAverage = useMemo(() => {
     if (filteredStudents.length === 0) return "0.00";

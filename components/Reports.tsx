@@ -7,6 +7,11 @@ import {
   PaymentRecord,
   TuitionConfig,
   EnglishScoreRecord,
+  Department,
+  STANDARD_LEVELS,
+  STANDARD_ROOMS,
+  isEveningStudent,
+  getCleanLevel,
 } from "../types";
 import * as XLSX from "xlsx";
 import {
@@ -86,34 +91,59 @@ const Reports: React.FC<ReportsProps> = ({
     }
   }, [isParent, parentChild]);
 
-  /* Fix: Explicitly cast mapped values to string array to avoid unknown assignment errors on line 63 */
+  const [selectedShift, setSelectedShift] = useState<'NORMAL' | 'EVENING'>('NORMAL');
+
+  const shiftStudents = useMemo(() => {
+    return students.filter(s => {
+      const isEve = isEveningStudent(s);
+      return selectedShift === 'EVENING' ? isEve : !isEve;
+    });
+  }, [students, selectedShift]);
+
   const availableLevels = useMemo(
-    () =>
-      Array.from(new Set(students.map((s) => s.level)))
-        .map(String)
-        .sort(),
-    [students],
+    () => {
+      const studentLevels = shiftStudents.map(s => getCleanLevel(s.level)).filter(Boolean);
+      const set = new Set<string>([...STANDARD_LEVELS, ...studentLevels]);
+      return Array.from(set).sort((a: string, b: string) => {
+        const idxA = STANDARD_LEVELS.indexOf(a);
+        const idxB = STANDARD_LEVELS.indexOf(b);
+        if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+        if (idxA !== -1) return -1;
+        if (idxB !== -1) return 1;
+        return a.localeCompare(b);
+      });
+    },
+    [shiftStudents],
   );
+
   const availableDepts = useMemo(
-    () =>
-      Array.from(new Set(students.map((s) => s.department)))
-        .map(String)
-        .sort(),
-    [students],
+    () => {
+      const depts = new Set<string>(shiftStudents.map(s => s.department).filter(Boolean));
+      Object.values(Department).forEach(d => depts.add(d));
+      return Array.from(depts).sort((a: string, b: string) => a.localeCompare(b));
+    },
+    [shiftStudents],
   );
+
   const availableRooms = useMemo(
-    () =>
-      Array.from(new Set(students.map((s) => s.room)))
-        .map(String)
-        .sort((a, b) => parseInt(a) - parseInt(b)),
-    [students],
+    () => {
+      const rms = new Set<string>(shiftStudents.map(s => s.room).filter(Boolean));
+      STANDARD_ROOMS.forEach(r => rms.add(r));
+      return Array.from(rms).sort((a: string, b: string) => {
+        const na = parseInt(a);
+        const nb = parseInt(b);
+        if (!isNaN(na) && !isNaN(nb)) return na - nb;
+        return a.localeCompare(b);
+      });
+    },
+    [shiftStudents],
   );
 
   const [reportLevel, setReportLevel] = useState<string>(
-    availableLevels[0] || "",
+    availableLevels[0] || "ปวช. 1",
   );
   const [reportDept, setReportDept] = useState<string>(availableDepts[0] || "");
-  const [reportRoom, setReportRoom] = useState<string>(availableRooms[0] || "");
+  const [reportRoom, setReportRoom] = useState<string>(availableRooms[0] || "1");
 
   const selectedStudent = useMemo(
     () => students.find((s) => String(s.id) === String(selectedStudentId)),
@@ -121,13 +151,13 @@ const Reports: React.FC<ReportsProps> = ({
   );
 
   const roomStudents = useMemo(() => {
-    return students.filter(
+    return shiftStudents.filter(
       (s) =>
         s.level === reportLevel &&
         s.department === reportDept &&
         s.room === reportRoom,
     );
-  }, [students, reportLevel, reportDept, reportRoom]);
+  }, [shiftStudents, reportLevel, reportDept, reportRoom]);
 
   const globalActiveBlocks = useMemo(() => {
     const active = new Set<number>();
@@ -526,6 +556,37 @@ const Reports: React.FC<ReportsProps> = ({
 
       {activeTab === "room" && !isParent && (
         <div className="space-y-8 animate-in slide-in-from-bottom-4">
+          {/* Shift selector: ภาคปกติ vs ภาคค่ำ */}
+          <div className="flex flex-wrap items-center justify-between gap-4 p-4 bg-white rounded-3xl border border-slate-200 shadow-sm">
+            <div className="flex items-center gap-2 p-1 bg-slate-100 rounded-2xl w-fit">
+              <button
+                type="button"
+                onClick={() => setSelectedShift('NORMAL')}
+                className={`px-5 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 ${
+                  selectedShift === 'NORMAL'
+                    ? 'bg-white text-blue-600 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                ☀️ ภาคปกติ
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedShift('EVENING')}
+                className={`px-5 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 ${
+                  selectedShift === 'EVENING'
+                    ? 'bg-indigo-900 text-white shadow-sm'
+                    : 'text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                🌙 ภาคค่ำ
+              </button>
+            </div>
+            <div className="text-xs font-bold text-slate-400">
+              {selectedShift === 'NORMAL' ? 'รายงานเฉพาะนักเรียนภาคปกติ' : 'รายงานเฉพาะนักเรียนภาคค่ำ'}
+            </div>
+          </div>
+
           <div className="bg-white p-8 rounded-[32px] border border-slate-200 shadow-sm grid grid-cols-1 md:grid-cols-4 gap-6 items-end">
             <div className="space-y-2">
               <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1 font-heading">

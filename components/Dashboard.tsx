@@ -7,7 +7,7 @@ import {
   Bell, Sparkles, ExternalLink, Megaphone, Building, AlertTriangle,
   GraduationCap, Calendar
 } from 'lucide-react';
-import { Student, AttendanceRecord, StudyBlock, TuitionConfig, PaymentRecord, NotificationRecord, NewsRecord, EnglishScoreRecord } from '../types';
+import { Student, AttendanceRecord, StudyBlock, TuitionConfig, PaymentRecord, NotificationRecord, NewsRecord, EnglishScoreRecord, Department, STANDARD_LEVELS, isEveningStudent, getCleanLevel } from '../types';
 import { 
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
   BarChart, Bar
@@ -54,11 +54,31 @@ const Dashboard: React.FC<DashboardProps> = ({
   englishScores = []
 }) => {
   const [viewingStudentId, setViewingStudentId] = useState<string | null>(null);
+  const [filterShift, setFilterShift] = useState<'ALL' | 'NORMAL' | 'EVENING'>('ALL');
   const [filterLevel, setFilterLevel] = useState<string>('ALL');
   const [filterDept, setFilterDept] = useState<string>('ALL');
   const [showBankDetails, setShowBankDetails] = useState(false);
   const [copied, setCopied] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
+
+  const availableLevels = useMemo(() => {
+    const studentLevels = (students || []).map(s => getCleanLevel(s.level)).filter(Boolean);
+    const set = new Set([...STANDARD_LEVELS, ...studentLevels]);
+    return Array.from(set).sort((a, b) => {
+      const idxA = STANDARD_LEVELS.indexOf(a);
+      const idxB = STANDARD_LEVELS.indexOf(b);
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return a.localeCompare(b);
+    });
+  }, [students]);
+
+  const availableDepts = useMemo(() => {
+    const depts = new Set((students || []).map(s => s.department).filter(Boolean));
+    Object.values(Department).forEach(d => depts.add(d));
+    return Array.from(depts).sort();
+  }, [students]);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -166,11 +186,14 @@ const Dashboard: React.FC<DashboardProps> = ({
   };
 
   const filteredStudents = useMemo(() => {
-    return (students || []).filter(s => 
-      (filterLevel === 'ALL' || s.level === filterLevel) &&
-      (filterDept === 'ALL' || s.department === filterDept)
-    );
-  }, [students, filterLevel, filterDept]);
+    return (students || []).filter(s => {
+      const matchLevel = filterLevel === 'ALL' || s.level === filterLevel;
+      const matchDept = filterDept === 'ALL' || s.department === filterDept;
+      const isEve = isEveningStudent(s);
+      const matchShift = filterShift === 'ALL' || (filterShift === 'EVENING' ? isEve : !isEve);
+      return matchLevel && matchDept && matchShift;
+    });
+  }, [students, filterLevel, filterDept, filterShift]);
 
   const targetId = isParent ? user?.studentId : viewingStudentId;
   
@@ -548,13 +571,18 @@ const Dashboard: React.FC<DashboardProps> = ({
           </div>
         </div>
         <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
+          <select value={filterShift} onChange={(e) => setFilterShift(e.target.value as any)} className="w-full bg-slate-50 border border-slate-100 p-3 rounded-xl text-[10px] font-black uppercase outline-none font-heading">
+            <option value="ALL">ทุกรอบเวลา (ปกติ/ค่ำ)</option>
+            <option value="NORMAL">☀️ ภาคปกติ</option>
+            <option value="EVENING">🌙 ภาคค่ำ</option>
+          </select>
           <select value={filterLevel} onChange={(e) => setFilterLevel(e.target.value)} className="w-full bg-slate-50 border border-slate-100 p-3 rounded-xl text-[10px] font-black uppercase outline-none font-heading">
             <option value="ALL">ทุกระดับชั้น</option>
-            {Array.from(new Set(students.map(s => s.level))).map(l => <option key={l} value={l}>{l}</option>)}
+            {availableLevels.map(l => <option key={l} value={l}>{l}</option>)}
           </select>
           <select value={filterDept} onChange={(e) => setFilterDept(e.target.value)} className="w-full bg-slate-50 border border-slate-100 p-3 rounded-xl text-[10px] font-black uppercase outline-none font-heading">
             <option value="ALL">ทุกแผนกวิชา</option>
-            {Array.from(new Set(students.map(s => s.department))).map(d => <option key={d} value={d}>{d}</option>)}
+            {availableDepts.map(d => <option key={d} value={d}>{d}</option>)}
           </select>
         </div>
       </div>

@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { saveMultipleToFirestore } from '../firebaseService';
-import { Student, EnglishScoreRecord, User } from '../types';
+import { Student, EnglishScoreRecord, User, Department, STANDARD_LEVELS, STANDARD_ROOMS, isEveningStudent, getCleanLevel } from '../types';
 import { 
   Search, Save, CheckCircle2, Languages, 
   User as UserIcon, Loader2, Sparkles, Star, AlertCircle,
@@ -21,13 +21,48 @@ const EnglishScoreEntry: React.FC<EnglishScoreEntryProps> = ({
   setEnglishScores,
   currentUser
 }) => {
-  const availableLevels = useMemo(() => Array.from(new Set(students.map(s => s.level))).map(String).sort(), [students]);
-  const availableDepts = useMemo(() => Array.from(new Set(students.map(s => s.department))).map(String).sort(), [students]);
-  const availableRooms = useMemo(() => Array.from(new Set(students.map(s => s.room))).map(String).sort((a,b) => parseInt(a)-parseInt(b)), [students]);
+  const [selectedShift, setSelectedShift] = useState<'NORMAL' | 'EVENING'>('NORMAL');
 
-  const [level, setLevel] = useState<string>(availableLevels[0] || '');
+  const shiftStudents = useMemo(() => {
+    return students.filter(s => {
+      const isEve = isEveningStudent(s);
+      return selectedShift === 'EVENING' ? isEve : !isEve;
+    });
+  }, [students, selectedShift]);
+
+  const availableLevels = useMemo(() => {
+    const studentLevels = shiftStudents.map(s => getCleanLevel(s.level)).filter(Boolean);
+    const set = new Set<string>([...STANDARD_LEVELS, ...studentLevels]);
+    return Array.from(set).sort((a: string, b: string) => {
+      const idxA = STANDARD_LEVELS.indexOf(a);
+      const idxB = STANDARD_LEVELS.indexOf(b);
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return a.localeCompare(b);
+    });
+  }, [shiftStudents]);
+
+  const availableDepts = useMemo(() => {
+    const depts = new Set<string>(shiftStudents.map(s => s.department).filter(Boolean));
+    Object.values(Department).forEach(d => depts.add(d));
+    return Array.from(depts).sort((a: string, b: string) => a.localeCompare(b));
+  }, [shiftStudents]);
+
+  const availableRooms = useMemo(() => {
+    const rms = new Set<string>(shiftStudents.map(s => s.room).filter(Boolean));
+    STANDARD_ROOMS.forEach(r => rms.add(r));
+    return Array.from(rms).sort((a: string, b: string) => {
+      const na = parseInt(a);
+      const nb = parseInt(b);
+      if (!isNaN(na) && !isNaN(nb)) return na - nb;
+      return a.localeCompare(b);
+    });
+  }, [shiftStudents]);
+
+  const [level, setLevel] = useState<string>(availableLevels[0] || 'ปวช. 1');
   const [dept, setDept] = useState<string>(availableDepts[0] || '');
-  const [room, setRoom] = useState<string>(availableRooms[0] || '');
+  const [room, setRoom] = useState<string>(availableRooms[0] || '1');
   const [searchTerm, setSearchTerm] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
@@ -48,7 +83,7 @@ const EnglishScoreEntry: React.FC<EnglishScoreEntryProps> = ({
     setCurrentSession(sessionMap);
   }, [englishScores]);
 
-  const filteredStudents = students.filter(s => 
+  const filteredStudents = shiftStudents.filter(s => 
     s.level === level && s.department === dept && s.room === room &&
     (s.name.toLowerCase().includes(searchTerm.toLowerCase()) || s.studentId.includes(searchTerm))
   );
@@ -174,6 +209,37 @@ const EnglishScoreEntry: React.FC<EnglishScoreEntryProps> = ({
       <div className="bg-white p-8 md:p-10 rounded-[40px] border border-slate-200 shadow-sm relative overflow-hidden">
         <div className="absolute top-0 right-0 p-10 text-slate-50/50 -mr-10 -mt-10">
            <Star size={200} strokeWidth={1} />
+        </div>
+
+        {/* Shift selector: ภาคปกติ vs ภาคค่ำ */}
+        <div className="flex flex-wrap items-center justify-between gap-4 pb-6 mb-6 border-b border-slate-100 relative z-10">
+          <div className="flex items-center gap-2 p-1 bg-slate-100 rounded-2xl w-fit">
+            <button
+              type="button"
+              onClick={() => setSelectedShift('NORMAL')}
+              className={`px-5 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 ${
+                selectedShift === 'NORMAL'
+                  ? 'bg-white text-indigo-600 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-900'
+              }`}
+            >
+              ☀️ ภาคปกติ
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedShift('EVENING')}
+              className={`px-5 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 ${
+                selectedShift === 'EVENING'
+                  ? 'bg-indigo-900 text-white shadow-sm'
+                  : 'text-slate-500 hover:text-slate-900'
+              }`}
+            >
+              🌙 ภาคค่ำ
+            </button>
+          </div>
+          <div className="text-xs font-bold text-slate-400">
+            {selectedShift === 'NORMAL' ? 'บันทึกคะแนนเฉพาะนักเรียนภาคปกติ' : 'บันทึกคะแนนเฉพาะนักเรียนภาคค่ำ'}
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 relative z-10">

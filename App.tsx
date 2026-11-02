@@ -48,7 +48,16 @@ const App: React.FC = () => {
   const [isFirebaseReady, setIsFirebaseReady] = useState(false);
   const [firebaseUser, setFirebaseUser] = useState<any>(null);
 
-  const [students, setStudents] = useState<Student[]>(MOCK_STUDENTS);
+  const [students, setStudents] = useState<Student[]>(() => {
+    try {
+      const cached = localStorage.getItem('cached_students_data');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return MOCK_STUDENTS;
+  });
   const [isStudentsLoaded, setIsStudentsLoaded] = useState(true);
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [behaviorRecords, setBehaviorRecords] = useState<BehaviorRecord[]>([]);
@@ -169,21 +178,38 @@ const App: React.FC = () => {
     const unsubStudents = syncCollection<Student>('students', (data) => {
       console.log(`Synced ${data.length} students from cloud`);
       
-      // Normalize level and room to prevent duplicate categories due to spaces (e.g. "ปวช.1" vs "ปวช. 1")
+      // Normalize level and room, clean out ภาคค่ำ from level and set shift properly
       const normalizedData = data.map(s => {
         let nLevel = s.level ? String(s.level).trim() : '';
+        const isEve = s.shift === 'EVENING' || nLevel.includes('ภาคค่ำ') || String(s.room || '').includes('ภาคค่ำ') || String(s.department || '').includes('ภาคค่ำ');
+        
+        nLevel = nLevel.replace(/ภาคค่ำ/g, '').trim();
         nLevel = nLevel.replace(/^(ปว[ชส])\.?\s*([1-3])$/, '$1. $2');
         
-        let nRoom = s.room ? String(s.room).trim() : '';
+        let nRoom = s.room ? String(s.room).trim() : '1';
+        nRoom = nRoom.replace(/ภาคค่ำ/g, '').trim();
         nRoom = nRoom.replace(/^ห้อง\s*([0-9]+)$/, '$1');
         nRoom = nRoom.replace(/\s+/g, '');
+        if (!nRoom) nRoom = '1';
+
+        let nDept = s.department ? String(s.department).trim() : '';
+        nDept = nDept.replace(/ภาคค่ำ/g, '').trim();
         
-        return { ...s, level: nLevel, room: nRoom };
+        return { 
+          ...s, 
+          level: nLevel, 
+          room: nRoom,
+          department: nDept,
+          shift: isEve ? ('EVENING' as const) : ('NORMAL' as const)
+        };
       });
 
       if (normalizedData.length > 0) {
         setStudents(normalizedData);
         setIsStudentsLoaded(true);
+        try {
+          localStorage.setItem('cached_students_data', JSON.stringify(normalizedData));
+        } catch (e) {}
       } else if (isFirebaseReady) {
         // Cloud is empty, use MOCK as fallback for local view
         setStudents(MOCK_STUDENTS);
