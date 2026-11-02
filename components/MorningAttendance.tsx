@@ -6,7 +6,8 @@ import { STATUS_LABELS } from '../constants';
 import { 
   Search, Save, CheckCircle2, History, ClipboardCheck, 
   MessageSquare, Share2, Sun, Loader2, X, Scan, Camera, CameraOff,
-  UserCheck, AlertCircle, Sparkles, Check, Clock, Trash2
+  UserCheck, AlertCircle, Sparkles, Check, Clock, Trash2,
+  RefreshCw, Edit3, Calendar, RotateCcw, AlertTriangle, ArrowRight
 } from 'lucide-react';
 
 interface MorningAttendanceProps {
@@ -17,6 +18,22 @@ interface MorningAttendanceProps {
   rooms: string[];
   setRooms: React.Dispatch<React.SetStateAction<string[]>>;
 }
+
+// Format local date YYYY-MM-DD
+const getTodayDateString = () => {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+// Check if record belongs to today (supporting both local date and UTC date format)
+const isRecordToday = (r: AttendanceRecord) => {
+  const localToday = getTodayDateString();
+  const utcToday = new Date().toISOString().split('T')[0];
+  return r.date === localToday || r.date === utcToday;
+};
 
 const MorningAttendance: React.FC<MorningAttendanceProps> = ({ 
   students, 
@@ -30,8 +47,8 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
 
   const availableLevels = useMemo(() => {
     const studentLevels = morningStudents.map(s => getCleanLevel(s.level)).filter(Boolean);
-    const set = new Set([...STANDARD_LEVELS, ...studentLevels]);
-    return Array.from(set).sort((a, b) => {
+    const set = new Set<string>([...STANDARD_LEVELS, ...studentLevels]);
+    return Array.from(set).sort((a: string, b: string) => {
       const idxA = STANDARD_LEVELS.indexOf(a);
       const idxB = STANDARD_LEVELS.indexOf(b);
       if (idxA !== -1 && idxB !== -1) return idxA - idxB;
@@ -43,17 +60,17 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
 
   const availableDepts = useMemo(() => {
     const studentDepts = morningStudents.map(s => s.department).filter(Boolean);
-    const set = new Set([...Object.values(Department), ...studentDepts]);
-    return Array.from(set).sort();
+    const set = new Set<string>([...Object.values(Department), ...studentDepts]);
+    return Array.from(set).sort((a: string, b: string) => a.localeCompare(b));
   }, [morningStudents]);
 
   const availableRooms = useMemo(() => {
-    const studentRooms = morningStudents.map(s => s.room).filter(Boolean);
-    const set = new Set([...STANDARD_ROOMS, ...studentRooms]);
-    return Array.from(set).sort((a, b) => {
-      const na = parseInt(a);
-      const nb = parseInt(b);
-      if (!isNaN(na) && !isNaN(nb)) return na - nb;
+    const studentRooms = morningStudents.map(s => String(s.room || '1').trim()).filter(Boolean);
+    const set = new Set<string>([...STANDARD_ROOMS, ...studentRooms]);
+    return Array.from(set).sort((a: string, b: string) => {
+      const numA = parseInt(a, 10);
+      const numB = parseInt(b, 10);
+      if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
       return a.localeCompare(b);
     });
   }, [morningStudents]);
@@ -66,9 +83,20 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
   const [selectedHistoryDate, setSelectedHistoryDate] = useState<string>('');
   const [currentSession, setCurrentSession] = useState<Record<string, AttendanceStatus>>({});
   const [remarks, setRemarks] = useState<Record<string, string>>({});
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
+  const [saveMessage, setSaveMessage] = useState('');
   const [viewMode, setViewMode] = useState<'checkin' | 'history'>('checkin');
+  
+  // Single student update loading state
+  const [updatingStudentId, setUpdatingStudentId] = useState<string | null>(null);
+
+  // History record editing modal state
+  const [editingHistoryRecord, setEditingHistoryRecord] = useState<AttendanceRecord | null>(null);
+  const [editHistoryStatus, setEditHistoryStatus] = useState<AttendanceStatus>('PRESENT');
+  const [editHistoryRemark, setEditHistoryRemark] = useState('');
+  const [isHistorySaving, setIsHistorySaving] = useState(false);
 
   // Barcode Scanner States
   const [isScannerEnabled, setIsScannerEnabled] = useState(false);
@@ -82,25 +110,63 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
     if (availableRooms.length > 0 && !room) setRoom(availableRooms[0]);
   }, [availableLevels, availableDepts, availableRooms]);
 
+  const filteredStudents = useMemo(() => {
+    return morningStudents.filter(s => 
+      s.level === level && s.department === dept && s.room === room &&
+      (s.name.toLowerCase().includes(searchTerm.toLowerCase()) || s.studentId.includes(searchTerm))
+    );
+  }, [morningStudents, level, dept, room, searchTerm]);
+
+  // Existing records recorded for today for students in the current room
+  const existingTodayRecords = useMemo(() => {
+    const studentIds = new Set(filteredStudents.map(s => s.id));
+    return attendanceRecords.filter(r => 
+      r.type === 'MORNING' && isRecordToday(r) && studentIds.has(r.studentId)
+    );
+  }, [attendanceRecords, filteredStudents]);
+
+  const hasExistingTodayRecords = existingTodayRecords.length > 0;
+
+  // Latest timestamp of recorded attendance today
+  const lastRecordedTimestamp = useMemo(() => {
+    if (existingTodayRecords.length === 0) return null;
+    const sorted = [...existingTodayRecords].sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
+    return sorted[0]?.timestamp || null;
+  }, [existingTodayRecords]);
+
+  // Populate session data whenever room or level changes, or upon manual reload
   useEffect(() => {
-    const rawDate = new Date().toISOString().split('T')[0];
-    const todayRecords = attendanceRecords.filter(r => r.date === rawDate && r.type === 'MORNING');
     const sessionMap: Record<string, AttendanceStatus> = {};
     const remarkMap: Record<string, string> = {};
-    todayRecords.forEach(r => {
+
+    existingTodayRecords.forEach(r => {
+      sessionMap[r.studentId] = r.status;
+      if (r.remark) remarkMap[r.studentId] = r.remark;
+    });
+
+    setCurrentSession(sessionMap);
+    setRemarks(remarkMap);
+    setHasUnsavedChanges(false);
+  }, [level, dept, room, existingTodayRecords.length]);
+
+  // Reload today's data from existing records
+  const reloadTodayData = () => {
+    const sessionMap: Record<string, AttendanceStatus> = {};
+    const remarkMap: Record<string, string> = {};
+    existingTodayRecords.forEach(r => {
       sessionMap[r.studentId] = r.status;
       if (r.remark) remarkMap[r.studentId] = r.remark;
     });
     setCurrentSession(sessionMap);
     setRemarks(remarkMap);
-  }, [level, dept, room, attendanceRecords]);
+    setHasUnsavedChanges(false);
+  };
 
   // Handle Scanner Focus Logic
   useEffect(() => {
     let focusInterval: number;
     if (isScannerEnabled && viewMode === 'checkin') {
       scanInputRef.current?.focus();
-      // สร้าง interval เพื่อดึงโฟกัสกลับมาเสมอ ป้องกันครูเผลอไปกดที่อื่น
       focusInterval = window.setInterval(() => {
         if (document.activeElement !== scanInputRef.current) {
           scanInputRef.current?.focus();
@@ -109,11 +175,6 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
     }
     return () => clearInterval(focusInterval);
   }, [isScannerEnabled, viewMode]);
-
-  const filteredStudents = morningStudents.filter(s => 
-    s.level === level && s.department === dept && s.room === room &&
-    (s.name.toLowerCase().includes(searchTerm.toLowerCase()) || s.studentId.includes(searchTerm))
-  );
 
   const historyRecords = useMemo(() => {
     return attendanceRecords.filter(record => {
@@ -126,6 +187,13 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
 
   const handleStatusChange = (studentId: string, status: AttendanceStatus) => {
     setCurrentSession(prev => ({ ...prev, [studentId]: status }));
+    setHasUnsavedChanges(true);
+    setIsSaved(false);
+  };
+
+  const handleRemarkChange = (studentId: string, remark: string) => {
+    setRemarks(prev => ({ ...prev, [studentId]: remark }));
+    setHasUnsavedChanges(true);
     setIsSaved(false);
   };
 
@@ -133,21 +201,18 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
     e.preventDefault();
     if (!barcodeInput) return;
 
-    // ค้นหานักเรียนจาก studentId
     const scannedStudent = morningStudents.find(s => s.studentId === barcodeInput.trim());
     
     if (scannedStudent) {
       handleStatusChange(scannedStudent.id, 'PRESENT');
       setLastScannedStudent(scannedStudent);
       
-      // เสียง Beep สัญญาณสำเร็จ
       try {
         const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3');
         audio.volume = 0.5;
         audio.play();
       } catch (err) {}
 
-      // เคลียร์ feedback หลังจาก 2 วินาที
       setTimeout(() => setLastScannedStudent(null), 2500);
     } else {
       setLastScannedStudent(null);
@@ -157,40 +222,141 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
     scanInputRef.current?.focus();
   };
 
+  // Save or Update Attendance for the entire selected room
   const handleSave = async () => {
     setIsSaving(true);
-    await new Promise(resolve => setTimeout(resolve, 600));
-    const rawDate = new Date().toISOString().split('T')[0];
+    await new Promise(resolve => setTimeout(resolve, 400));
+    const todayDate = getTodayDateString();
+    const utcDate = new Date().toISOString().split('T')[0];
     const timestamp = new Date().toLocaleString('th-TH');
+
     const newRecordsBatch: AttendanceRecord[] = filteredStudents.map(s => ({
-      id: `MORNING_${rawDate}_${s.id}`,
+      id: `MORNING_${todayDate}_${s.id}`,
       studentId: s.id,
-      date: rawDate,
+      date: todayDate,
       type: 'MORNING',
       status: currentSession[s.id] || 'ABSENT',
       remark: remarks[s.id] || '',
       timestamp: timestamp
     }));
     
-    // Save to Firestore for multi-device sync
+    // Save/Overwrite in Firestore for multi-device sync
     await saveMultipleToFirestore('attendance', newRecordsBatch);
     
     setAttendanceRecords(prev => {
-      const studentIds = filteredStudents.map(s => s.id);
-      const otherRecords = prev.filter(r => !(r.date === rawDate && r.type === 'MORNING' && studentIds.includes(r.studentId)));
+      const studentIds = new Set(filteredStudents.map(s => s.id));
+      const otherRecords = prev.filter(r => 
+        !(r.type === 'MORNING' && studentIds.has(r.studentId) && (r.date === todayDate || r.date === utcDate))
+      );
       return [...otherRecords, ...newRecordsBatch];
     });
+
     setIsSaving(false);
     setIsSaved(true);
-    setTimeout(() => setIsSaved(false), 2000);
+    setHasUnsavedChanges(false);
+    setSaveMessage(hasExistingTodayRecords ? 'อัพเดทข้อมูลการเข้าแถววันนี้สำเร็จเรียบร้อยแล้ว!' : 'บันทึกการเช็คชื่อเข้าแถววันนี้สำเร็จเรียบร้อยแล้ว!');
+    setTimeout(() => {
+      setIsSaved(false);
+      setSaveMessage('');
+    }, 3000);
+  };
+
+  // Quick Save / Update for a single student (e.g. student arriving late)
+  const handleSaveSingleStudent = async (studentId: string) => {
+    setUpdatingStudentId(studentId);
+    const todayDate = getTodayDateString();
+    const utcDate = new Date().toISOString().split('T')[0];
+    const timestamp = new Date().toLocaleString('th-TH');
+
+    const newRecord: AttendanceRecord = {
+      id: `MORNING_${todayDate}_${studentId}`,
+      studentId: studentId,
+      date: todayDate,
+      type: 'MORNING',
+      status: currentSession[studentId] || 'ABSENT',
+      remark: remarks[studentId] || '',
+      timestamp: timestamp
+    };
+
+    try {
+      await saveToFirestore('attendance', newRecord);
+
+      setAttendanceRecords(prev => {
+        const otherRecords = prev.filter(r => 
+          !(r.type === 'MORNING' && r.studentId === studentId && (r.date === todayDate || r.date === utcDate))
+        );
+        return [...otherRecords, newRecord];
+      });
+
+      // Quick visual feedback
+      setSaveMessage(`อัพเดทข้อมูลของนักเรียนสำเร็จ (${timestamp.split(' ')[1] || 'บันทึกแล้ว'})`);
+      setTimeout(() => setSaveMessage(''), 2500);
+    } catch (e) {
+      alert('เกิดข้อผิดพลาดในการอัพเดทข้อมูล');
+    } finally {
+      setUpdatingStudentId(null);
+    }
+  };
+
+  // Quick edit single record from History tab
+  const handleOpenEditHistory = (record: AttendanceRecord) => {
+    setEditingHistoryRecord(record);
+    setEditHistoryStatus(record.status);
+    setEditHistoryRemark(record.remark || '');
+  };
+
+  const handleSaveHistoryEdit = async () => {
+    if (!editingHistoryRecord) return;
+    setIsHistorySaving(true);
+    const updatedRecord: AttendanceRecord = {
+      ...editingHistoryRecord,
+      status: editHistoryStatus,
+      remark: editHistoryRemark,
+      timestamp: `${new Date().toLocaleString('th-TH')} (แก้ไข)`
+    };
+
+    try {
+      await saveToFirestore('attendance', updatedRecord);
+      setAttendanceRecords(prev => prev.map(r => r.id === updatedRecord.id ? updatedRecord : r));
+      setEditingHistoryRecord(null);
+    } catch (err) {
+      alert('เกิดข้อผิดพลาดในการแก้ไขข้อมูล');
+    } finally {
+      setIsHistorySaving(false);
+    }
   };
 
   const markAll = (status: AttendanceStatus) => {
     const newBatch: Record<string, AttendanceStatus> = {};
     filteredStudents.forEach(s => { newBatch[s.id] = status; });
     setCurrentSession(prev => ({ ...prev, ...newBatch }));
+    setHasUnsavedChanges(true);
     setIsSaved(false);
   };
+
+  // Calculate live stats for the current view
+  const stats = useMemo(() => {
+    let presents = 0;
+    let lates = 0;
+    let leaves = 0;
+    let absents = 0;
+
+    filteredStudents.forEach(s => {
+      const st = currentSession[s.id];
+      if (st === 'PRESENT') presents++;
+      else if (st === 'LATE') lates++;
+      else if (st === 'SICK_LEAVE' || st === 'BUSINESS_LEAVE') leaves++;
+      else absents++;
+    });
+
+    return {
+      total: filteredStudents.length,
+      presents,
+      lates,
+      leaves,
+      absents
+    };
+  }, [filteredStudents, currentSession]);
 
   const shareToLine = () => {
     const rawDate = new Date().toLocaleDateString('th-TH', { 
@@ -198,9 +364,14 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
       month: 'long', 
       year: 'numeric' 
     });
+    const currentTimeStr = new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+
     let text = `📋 รายงานเช็คชื่อเข้าแถว (ภาคปกติ)\n`;
     text += `🗓️ วันที่: ${rawDate}\n`;
     text += `🏫 ${level} / ${dept} (ห้อง ${room})\n`;
+    if (hasExistingTodayRecords) {
+      text += `🔄 (อัพเดทล่าสุด ณ เวลา ${currentTimeStr} น.)\n`;
+    }
     text += `--------------------------\n`;
     
     filteredStudents.forEach((s, idx) => {
@@ -208,18 +379,16 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
       let label = '';
       if (status === 'PRESENT') label = '(มา)';
       else if (status === 'LATE') label = '(สาย)';
-      else if (status === 'SICK_LEAVE' || status === 'BUSINESS_LEAVE') label = '(ลา)';
+      else if (status === 'SICK_LEAVE') label = '(ลาป่วย)';
+      else if (status === 'BUSINESS_LEAVE') label = '(ลากิจ)';
       else label = '(ขาด)';
       
-      text += `${idx + 1}. ${s.name} ${label}\n`;
+      const rmk = remarks[s.id] ? ` [${remarks[s.id]}]` : '';
+      text += `${idx + 1}. ${s.name} ${label}${rmk}\n`;
     });
     text += `--------------------------\n`;
-    const presents = filteredStudents.filter(s => currentSession[s.id] === 'PRESENT').length;
-    const absents = filteredStudents.filter(s => (currentSession[s.id] || 'ABSENT') === 'ABSENT').length;
-    const lates = filteredStudents.filter(s => currentSession[s.id] === 'LATE').length;
-    const leaves = filteredStudents.filter(s => currentSession[s.id] === 'SICK_LEAVE' || currentSession[s.id] === 'BUSINESS_LEAVE').length;
     
-    text += `มา: ${presents} | สาย: ${lates} | ลา: ${leaves} | ขาด: ${absents} | รวม: ${filteredStudents.length}\n`;
+    text += `มา: ${stats.presents} | สาย: ${stats.lates} | ลา: ${stats.leaves} | ขาด: ${stats.absents} | รวม: ${stats.total}\n`;
     text += `ระบบ EduSmart CMS`;
     window.open(`https://line.me/R/msg/text/?${encodeURIComponent(text)}`, '_blank');
   };
@@ -258,21 +427,35 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
   };
 
   return (
-    <div className="space-y-6 md:space-y-8 animate-in slide-in-from-bottom-4 duration-500 pb-20">
+    <div className="space-y-6 md:space-y-8 animate-in slide-in-from-bottom-4 duration-500 pb-28">
+      {/* Top Header Mode Tabs & Actions */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="flex bg-white p-2 rounded-[22px] border border-slate-200 shadow-sm w-full md:w-fit">
-          <button onClick={() => setViewMode('checkin')} className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-8 py-3.5 rounded-xl text-sm font-black transition-all ${viewMode === 'checkin' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}><ClipboardCheck size={18} /> เช็คชื่อวันนี้</button>
-          <button onClick={() => setViewMode('history')} className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-8 py-3.5 rounded-xl text-sm font-black transition-all ${viewMode === 'history' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}><History size={18} /> ประวัติ</button>
+          <button 
+            onClick={() => setViewMode('checkin')} 
+            className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-8 py-3.5 rounded-xl text-sm font-black transition-all ${viewMode === 'checkin' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}
+          >
+            <ClipboardCheck size={18} /> เช็คชื่อวันนี้
+            {hasExistingTodayRecords && (
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse ml-1" title="มีข้อมูลของวันนี้แล้ว" />
+            )}
+          </button>
+          <button 
+            onClick={() => setViewMode('history')} 
+            className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-8 py-3.5 rounded-xl text-sm font-black transition-all ${viewMode === 'history' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}
+          >
+            <History size={18} /> ประวัติ
+          </button>
         </div>
         
-        <div className="flex gap-3 w-full md:w-auto">
+        <div className="flex flex-wrap gap-3 w-full md:w-auto">
           {viewMode === 'checkin' && (
             <button 
               onClick={() => setIsScannerEnabled(!isScannerEnabled)}
-              className={`flex-1 md:flex-none flex items-center justify-center gap-3 px-6 py-4 rounded-2xl text-[11px] md:text-sm font-black shadow-xl transition-all uppercase tracking-widest font-heading active:scale-95 border-2 ${isScannerEnabled ? 'bg-amber-500 border-amber-600 text-white' : 'bg-white border-slate-200 text-slate-600'}`}
+              className={`flex-1 md:flex-none flex items-center justify-center gap-3 px-6 py-4 rounded-2xl text-[11px] md:text-sm font-black shadow-xl transition-all uppercase tracking-widest font-heading active:scale-95 border-2 ${isScannerEnabled ? 'bg-amber-500 border-amber-600 text-white' : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'}`}
             >
               {isScannerEnabled ? <CameraOff size={20} /> : <Scan size={20} />}
-              {isScannerEnabled ? 'ปิดระบบสแกน' : 'เปิดโหมดสแกน'}
+              {isScannerEnabled ? 'ปิดโหมดสแกน' : 'เปิดโหมดสแกน'}
             </button>
           )}
 
@@ -290,7 +473,6 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
       {/* Barcode Scanner UI Panel */}
       {viewMode === 'checkin' && isScannerEnabled && (
         <div className="bg-slate-950 p-8 md:p-12 rounded-[40px] shadow-2xl animate-in zoom-in duration-300 relative overflow-hidden border-4 border-amber-400">
-           {/* Scan Line Animation */}
            <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-10">
               <div className="w-full h-1 bg-amber-400 absolute animate-[scan-move_3s_linear_infinite]" />
            </div>
@@ -301,7 +483,7 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
                   <Scan size={32} className="animate-pulse" />
                   <h3 className="text-3xl font-black text-white font-heading uppercase tracking-tight">Scanner Terminal</h3>
                 </div>
-                <p className="text-slate-500 font-bold text-xs uppercase tracking-[0.3em]">พร้อมรับรหัสนักเรียนจากเครื่องสแกน หรือ กล้อง</p>
+                <p className="text-slate-500 font-bold text-xs uppercase tracking-[0.3em]">พร้อมรับรหัสนักเรียนจากเครื่องสแกน หรือ บาร์โค้ด</p>
               </div>
 
               <form onSubmit={handleBarcodeScan} className="w-full max-w-lg">
@@ -323,7 +505,6 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
               {lastScannedStudent ? (
                 <div className="flex items-center gap-6 bg-green-600 text-white px-10 py-6 rounded-[32px] shadow-2xl animate-in slide-in-from-bottom-6 duration-300 border-2 border-white/20">
                   <div className="p-4 bg-white/20 rounded-2xl">
-                    {/* Fixed: Used imported Check icon */}
                     <Check size={32} strokeWidth={4} />
                   </div>
                   <div className="text-left">
@@ -336,7 +517,7 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
                 <div className="flex flex-col items-center gap-4 text-slate-500">
                    <div className="flex items-center gap-3 text-sm font-bold animate-pulse">
                       <Sparkles size={18} className="text-amber-500" />
-                      <span>กรุณายิงบาร์โค้ด หรือ พิมพ์เลข 6 หลัก</span>
+                      <span>กรุณายิงบาร์โค้ด หรือ พิมพ์เลขประจำตัวนักเรียน</span>
                    </div>
                 </div>
               )}
@@ -351,6 +532,7 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
         </div>
       )}
 
+      {/* Class & Filter Selector Card */}
       <div className="bg-white p-5 md:p-8 rounded-[28px] md:rounded-[32px] border border-slate-200 shadow-sm">
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 md:gap-6">
           <div className="space-y-1.5">
@@ -376,7 +558,7 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
             {viewMode === 'checkin' ? (
               <div className="relative">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="พิมพ์ชื่อนักเรียน..." className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl pl-12 pr-4 py-3 font-bold text-xs text-slate-900 outline-none transition-all shadow-inner" />
+                <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="พิมพ์ชื่อนักเรียน หรือ รหัสนักเรียน..." className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl pl-12 pr-4 py-3 font-bold text-xs text-slate-900 outline-none transition-all shadow-inner" />
               </div>
             ) : (
               <input type="date" value={selectedHistoryDate} onChange={(e) => setSelectedHistoryDate(e.target.value)} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 font-bold text-xs text-slate-900 outline-none" />
@@ -385,6 +567,112 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
         </div>
       </div>
 
+      {/* TODAY STATUS BANNER & UPDATE MODE INDICATOR (In Check-in View) */}
+      {viewMode === 'checkin' && (
+        <div className={`p-5 md:p-6 rounded-[28px] border transition-all ${
+          hasExistingTodayRecords 
+            ? 'bg-gradient-to-r from-emerald-50 via-teal-50/70 to-blue-50 border-emerald-200/80 shadow-sm'
+            : 'bg-amber-50/70 border-amber-200/80'
+        }`}>
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider ${
+                  hasExistingTodayRecords 
+                    ? 'bg-emerald-600 text-white shadow-sm' 
+                    : 'bg-amber-500 text-white'
+                }`}>
+                  {hasExistingTodayRecords ? (
+                    <>
+                      <RefreshCw size={13} className="animate-spin" style={{ animationDuration: '6s' }} /> 
+                      โหมดอัพเดทข้อมูลวันนี้
+                    </>
+                  ) : (
+                    <>
+                      <Sun size={13} />
+                      ยังไม่ได้บันทึกวันนี้
+                    </>
+                  )}
+                </span>
+                
+                {hasExistingTodayRecords && (
+                  <span className="text-xs font-bold text-emerald-800 bg-emerald-100/80 px-2.5 py-0.5 rounded-lg border border-emerald-200">
+                    เช็คชื่อแล้ว {existingTodayRecords.length} จาก {filteredStudents.length} คน
+                  </span>
+                )}
+
+                {lastRecordedTimestamp && (
+                  <span className="text-[11px] font-bold text-slate-500 flex items-center gap-1">
+                    <Clock size={12} className="text-slate-400" />
+                    บันทึกล่าสุด: {lastRecordedTimestamp}
+                  </span>
+                )}
+              </div>
+
+              <p className="text-xs md:text-sm font-bold text-slate-700">
+                {hasExistingTodayRecords ? (
+                  <>
+                    <span className="text-emerald-700 font-black">สามารถแก้ไข/อัพเดทข้อมูลได้ตลอดทั้งวัน:</span> หากมีนักเรียนมาสาย เปลี่ยนสถานะ หรือแก้ไขหมายเหตุ สามารถปรับเปลี่ยนและกด <strong>"อัพเดทข้อมูลวันนี้"</strong> ได้ทันที
+                  </>
+                ) : (
+                  <>
+                    กรุณาเลือกสถานะการเข้าแถวของนักเรียนแต่ละคน (มา / สาย / ลา / ขาด) จากนั้นกดปุ่ม <strong>"บันทึกการเช็คชื่อวันนี้"</strong>
+                  </>
+                )}
+              </p>
+            </div>
+
+            {hasExistingTodayRecords && (
+              <button 
+                onClick={reloadTodayData}
+                className="flex items-center gap-2 px-4 py-2 bg-white text-slate-700 hover:bg-slate-100 rounded-xl text-xs font-black border border-slate-200 shadow-sm transition-all shrink-0 active:scale-95"
+                title="ดึงข้อมูลที่บันทึกล่าสุดกลับมาแสดง"
+              >
+                <RotateCcw size={14} /> โหลดข้อมูลที่บันทึกไว้
+              </button>
+            )}
+          </div>
+
+          {/* Quick Real-Time Statistics Counters */}
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 mt-4 pt-4 border-t border-slate-200/60">
+            <div className="bg-white/80 backdrop-blur-sm p-2.5 rounded-xl border border-slate-200/60 text-center">
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">นักเรียนทั้งหมด</p>
+              <p className="text-lg font-black text-slate-800 font-heading">{stats.total} คน</p>
+            </div>
+            <div className="bg-green-50/80 p-2.5 rounded-xl border border-green-200/60 text-center">
+              <p className="text-[10px] font-black text-green-700 uppercase tracking-widest">มา</p>
+              <p className="text-lg font-black text-green-800 font-heading">{stats.presents} คน</p>
+            </div>
+            <div className="bg-amber-50/80 p-2.5 rounded-xl border border-amber-200/60 text-center">
+              <p className="text-[10px] font-black text-amber-700 uppercase tracking-widest">สาย</p>
+              <p className="text-lg font-black text-amber-800 font-heading">{stats.lates} คน</p>
+            </div>
+            <div className="bg-blue-50/80 p-2.5 rounded-xl border border-blue-200/60 text-center">
+              <p className="text-[10px] font-black text-blue-700 uppercase tracking-widest">ลา</p>
+              <p className="text-lg font-black text-blue-800 font-heading">{stats.leaves} คน</p>
+            </div>
+            <div className="bg-red-50/80 p-2.5 rounded-xl border border-red-200/60 text-center col-span-2 sm:col-span-1">
+              <p className="text-[10px] font-black text-red-700 uppercase tracking-widest">ขาด</p>
+              <p className="text-lg font-black text-red-800 font-heading">{stats.absents} คน</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Save / Feedback Notification Bar */}
+      {saveMessage && (
+        <div className="bg-emerald-600 text-white px-6 py-4 rounded-2xl shadow-xl flex items-center justify-between animate-in slide-in-from-top-3 duration-300">
+          <div className="flex items-center gap-3">
+            <CheckCircle2 size={24} className="text-emerald-200 shrink-0" />
+            <span className="font-bold text-sm md:text-base">{saveMessage}</span>
+          </div>
+          <button onClick={() => setSaveMessage('')} className="p-1 hover:bg-emerald-700 rounded-lg text-emerald-100">
+            <X size={18} />
+          </button>
+        </div>
+      )}
+
+      {/* Bulk Delete Option in History Mode */}
       {viewMode === 'history' && historyRecords.length > 0 && selectedHistoryDate && (
         <div className="flex justify-end px-1 animate-in fade-in slide-in-from-right-4 duration-300">
           {confirmBulkDelete ? (
@@ -408,68 +696,171 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
         </div>
       )}
 
+      {/* CHECKIN VIEW */}
       {viewMode === 'checkin' ? (
         <>
+          {/* Quick Mark All Buttons & Primary Save Button */}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 px-1">
             <div className="flex gap-2">
-              <button onClick={() => markAll('PRESENT')} className="flex-1 md:flex-none px-6 py-3 bg-green-50 text-green-700 rounded-xl text-[10px] font-black border border-green-200 uppercase tracking-widest hover:bg-green-100 transition-all">มาทุกคน</button>
-              <button onClick={() => markAll('ABSENT')} className="flex-1 md:flex-none px-6 py-3 bg-red-50 text-red-700 rounded-xl text-[10px] font-black border border-red-200 uppercase tracking-widest hover:bg-red-100 transition-all">ขาดทุกคน</button>
+              <button 
+                onClick={() => markAll('PRESENT')} 
+                className="flex-1 md:flex-none px-6 py-3 bg-green-50 text-green-700 rounded-xl text-[10px] font-black border border-green-200 uppercase tracking-widest hover:bg-green-100 transition-all active:scale-95"
+              >
+                มาทุกคน
+              </button>
+              <button 
+                onClick={() => markAll('ABSENT')} 
+                className="flex-1 md:flex-none px-6 py-3 bg-red-50 text-red-700 rounded-xl text-[10px] font-black border border-red-200 uppercase tracking-widest hover:bg-red-100 transition-all active:scale-95"
+              >
+                ขาดทุกคน
+              </button>
             </div>
+
             <button 
               onClick={handleSave} 
               disabled={isSaving}
-              className={`flex items-center justify-center gap-3 px-10 py-5 rounded-2xl text-white font-black transition-all shadow-xl active:scale-95 ${
+              className={`flex items-center justify-center gap-3 px-8 py-4.5 rounded-2xl text-white font-black transition-all shadow-xl active:scale-95 ${
                 isSaved ? 'bg-green-600 shadow-green-200' : 
-                isSaving ? 'bg-slate-400 cursor-not-allowed' : 'bg-slate-900 hover:bg-black'
+                isSaving ? 'bg-slate-400 cursor-not-allowed' : 
+                hasExistingTodayRecords 
+                  ? hasUnsavedChanges 
+                    ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200 ring-4 ring-emerald-300/40' 
+                    : 'bg-blue-600 hover:bg-blue-700 shadow-blue-200'
+                  : 'bg-slate-900 hover:bg-black shadow-slate-300'
               }`}
             >
-              {isSaving ? <Loader2 size={22} className="animate-spin" /> : isSaved ? <CheckCircle2 size={22} /> : <Save size={22} />} 
-              <span className="text-sm md:text-base font-heading">{isSaving ? 'กำลังบันทึก...' : isSaved ? 'บันทึกสำเร็จ' : 'บันทึกข้อมูลวันนี้'}</span>
+              {isSaving ? (
+                <Loader2 size={22} className="animate-spin" />
+              ) : isSaved ? (
+                <CheckCircle2 size={22} />
+              ) : hasExistingTodayRecords ? (
+                <RefreshCw size={22} className={hasUnsavedChanges ? "animate-spin" : ""} style={{ animationDuration: '4s' }} />
+              ) : (
+                <Save size={22} />
+              )} 
+              <span className="text-sm md:text-base font-heading">
+                {isSaving ? 'กำลังบันทึกข้อมูล...' : 
+                 isSaved ? 'บันทึกสำเร็จเรียบร้อย!' : 
+                 hasExistingTodayRecords ? (hasUnsavedChanges ? 'อัพเดทข้อมูลวันนี้ (มีการเปลี่ยนแปลง)' : 'อัพเดทข้อมูลการเช็คชื่อวันนี้') : 
+                 'บันทึกการเช็คชื่อวันนี้'}
+              </span>
             </button>
           </div>
 
+          {/* Student Checkin Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-            {filteredStudents.map((student, index) => (
-              <div key={student.id} className={`bg-white p-6 rounded-[32px] border-2 flex flex-col gap-5 group transition-all relative overflow-hidden ${currentSession[student.id] === 'PRESENT' ? 'border-green-400 bg-green-50/10' : 'border-slate-100 hover:border-blue-300'}`}>
-                {currentSession[student.id] === 'PRESENT' && (
-                   <div className="absolute top-0 right-0 p-4 text-green-500/20">
-                      <CheckCircle2 size={64} />
-                   </div>
-                )}
-                
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center font-black text-white text-sm shrink-0 shadow-lg group-hover:scale-110 transition-transform">{index + 1}</div>
-                    <div className="min-w-0">
-                      <h4 className="font-black text-slate-900 text-base truncate font-heading">{student.name}</h4>
-                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">ID: {student.studentId}</p>
+            {filteredStudents.map((student, index) => {
+              const currentStatus = currentSession[student.id] || 'ABSENT';
+              const existingRecord = existingTodayRecords.find(r => r.studentId === student.id);
+              const isStatusChanged = existingRecord && existingRecord.status !== currentStatus;
+
+              return (
+                <div 
+                  key={student.id} 
+                  className={`bg-white p-6 rounded-[32px] border-2 flex flex-col gap-4 group transition-all relative overflow-hidden shadow-sm hover:shadow-md ${
+                    currentStatus === 'PRESENT' ? 'border-green-400/80 bg-green-50/15' : 
+                    currentStatus === 'LATE' ? 'border-amber-400/80 bg-amber-50/15' :
+                    currentStatus === 'SICK_LEAVE' || currentStatus === 'BUSINESS_LEAVE' ? 'border-blue-400/80 bg-blue-50/15' :
+                    'border-slate-200 hover:border-blue-300'
+                  }`}
+                >
+                  {/* Status Indicator Background Watermark */}
+                  {currentStatus === 'PRESENT' && (
+                     <div className="absolute top-0 right-0 p-4 text-green-500/15 pointer-events-none">
+                        <CheckCircle2 size={64} />
+                     </div>
+                  )}
+
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center font-black text-white text-sm shrink-0 shadow-lg group-hover:scale-105 transition-transform">
+                        {index + 1}
+                      </div>
+                      <div className="min-w-0">
+                        <h4 className="font-black text-slate-900 text-base truncate font-heading">{student.name}</h4>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">ID: {student.studentId}</p>
+                      </div>
+                    </div>
+
+                    {/* Today's Existing Status Badge / Change Badge */}
+                    <div className="text-right">
+                      {existingRecord ? (
+                        <div className="flex flex-col items-end gap-1">
+                          {isStatusChanged ? (
+                            <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[9px] font-black animate-pulse">
+                              แก้เป็น {STATUS_LABELS[currentStatus].label}
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[9px] font-bold">
+                              เดิม: {STATUS_LABELS[existingRecord.status].label}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-md bg-slate-50 text-slate-400 text-[9px] font-bold">
+                          ยังไม่บันทึก
+                        </span>
+                      )}
                     </div>
                   </div>
-                </div>
-                
-                <div className="grid grid-cols-5 gap-2">
-                  {Object.entries(STATUS_LABELS).map(([key, value]) => (
-                    <button 
-                      key={key} 
-                      onClick={() => handleStatusChange(student.id, key as AttendanceStatus)} 
-                      className={`flex flex-col items-center gap-2 p-2 rounded-xl border-2 transition-all ${currentSession[student.id] === key ? value.color + ' border-current shadow-sm' : 'bg-white border-slate-50 text-slate-300 hover:border-slate-200'}`}
-                    >
-                      <div className="scale-90 md:scale-100">{value.icon}</div>
-                      <span className="text-[8px] font-black uppercase text-center leading-tight tracking-tighter">{value.label}</span>
-                    </button>
-                  ))}
-                </div>
-
-                {(currentSession[student.id] && currentSession[student.id] !== 'PRESENT') && (
-                  <div className="relative animate-in slide-in-from-top-2">
-                    <MessageSquare className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-                    <input type="text" value={remarks[student.id] || ''} onChange={(e) => setRemarks(prev => ({ ...prev, [student.id]: e.target.value }))} placeholder="ระบุเหตุผลในการลา/ขาด..." className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2.5 font-bold text-slate-900 outline-none text-[10px] focus:border-blue-500 transition-all shadow-inner" />
+                  
+                  {/* Status Selection Buttons */}
+                  <div className="grid grid-cols-5 gap-2">
+                    {Object.entries(STATUS_LABELS).map(([key, value]) => (
+                      <button 
+                        key={key} 
+                        onClick={() => handleStatusChange(student.id, key as AttendanceStatus)} 
+                        className={`flex flex-col items-center gap-2 p-2 rounded-xl border-2 transition-all active:scale-95 ${
+                          currentStatus === key 
+                            ? value.color + ' border-current shadow-md ring-2 ring-current/20 font-black' 
+                            : 'bg-white border-slate-100 text-slate-400 hover:border-slate-200 hover:text-slate-600'
+                        }`}
+                      >
+                        <div className="scale-90 md:scale-100">{value.icon}</div>
+                        <span className="text-[8px] font-black uppercase text-center leading-tight tracking-tighter">{value.label}</span>
+                      </button>
+                    ))}
                   </div>
-                )}
-              </div>
-            ))}
+
+                  {/* Remark input if not present */}
+                  {(currentStatus && currentStatus !== 'PRESENT') && (
+                    <div className="relative animate-in slide-in-from-top-2">
+                      <MessageSquare className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                      <input 
+                        type="text" 
+                        value={remarks[student.id] || ''} 
+                        onChange={(e) => handleRemarkChange(student.id, e.target.value)} 
+                        placeholder="ระบุเหตุผลในการลา/สาย/ขาด..." 
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2.5 font-bold text-slate-900 outline-none text-[10px] focus:border-blue-500 transition-all shadow-inner" 
+                      />
+                    </div>
+                  )}
+
+                  {/* Quick Save Single Student Button (Extremely handy when updating 1 student) */}
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                    <span className="text-[9px] text-slate-400 font-bold">
+                      {existingRecord?.timestamp ? `ล่าสุด: ${existingRecord.timestamp}` : 'ยังไม่มีประวัติวันนี้'}
+                    </span>
+                    <button
+                      onClick={() => handleSaveSingleStudent(student.id)}
+                      disabled={updatingStudentId === student.id}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black text-blue-600 bg-blue-50 hover:bg-blue-100 active:scale-95 transition-all"
+                      title="บันทึกหรืออัพเดทเฉพาะนักเรียนคนนี้ทันที"
+                    >
+                      {updatingStudentId === student.id ? (
+                        <Loader2 size={12} className="animate-spin text-blue-600" />
+                      ) : (
+                        <Check size={12} />
+                      )}
+                      <span>{existingRecord ? 'อัพเดทเฉพาะคนนี้' : 'บันทึกคนนี้'}</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+
             {filteredStudents.length === 0 && (
-              <div className="col-span-full py-24 text-center bg-white rounded-[40px] border-4 border-dashed border-slate-50">
+              <div className="col-span-full py-24 text-center bg-white rounded-[40px] border-4 border-dashed border-slate-100">
                 <Sun size={64} className="mx-auto opacity-10 mb-6" />
                 <p className="text-slate-300 font-black uppercase tracking-[0.3em] text-sm">ไม่พบรายชื่อในกลุ่มนี้</p>
               </div>
@@ -477,57 +868,221 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
           </div>
         </>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {historyRecords.length > 0 ? historyRecords.map((record) => {
-            const student = students.find(s => s.id === record.studentId);
-            return (
-              <div key={record.id} className="bg-white p-6 rounded-[32px] border border-slate-200 flex flex-col gap-4 shadow-sm hover:shadow-md transition-all">
-                <div className="flex justify-between items-start">
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center shadow-inner"><ClipboardCheck size={20} /></div>
-                    <div>
-                       <p className="text-sm font-black text-slate-900 font-heading leading-none">{student?.name}</p>
-                       <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase tracking-widest">{record.date}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className={`px-4 py-1.5 rounded-full text-[9px] font-black border uppercase tracking-widest shadow-sm ${STATUS_LABELS[record.status].color}`}>
-                      {STATUS_LABELS[record.status].label}
-                    </span>
-                    {confirmDeleteId === record.id ? (
-                      <div className="flex items-center gap-1.5 animate-in slide-in-from-right-2 duration-300">
-                        <button onClick={() => setConfirmDeleteId(null)} className="p-1.5 bg-slate-100 text-slate-500 rounded-lg hover:bg-slate-200 transition-all"><X size={14} /></button>
-                        <button onClick={() => deleteSingleRecord(record.id)} className="p-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-all shadow-md"><Check size={14} /></button>
-                      </div>
-                    ) : (
-                      <button 
-                        onClick={() => setConfirmDeleteId(record.id)}
-                        disabled={isDeleting}
-                        className={`p-1.5 rounded-lg transition-all ${isDeleting ? 'text-slate-200 cursor-not-allowed' : 'text-slate-300 hover:text-red-500 hover:bg-red-50'}`}
-                        title="ลบรายการนี้"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    )}
-                  </div>
-                </div>
-                {record.remark && (
-                  <div className="p-3 bg-slate-50 rounded-2xl text-[10px] font-bold text-slate-600 flex items-center gap-3 border border-slate-100">
-                    <MessageSquare size={14} className="text-slate-400" /> {record.remark}
-                  </div>
-                )}
-                <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5 mt-1 opacity-60">
-                   {/* Fixed: Used imported Clock icon */}
-                   <Clock size={12} /> บันทึกเมื่อ {record.timestamp}
+        /* HISTORY VIEW */
+        <div className="space-y-6">
+          {/* Today's History Header Alert with shortcut to checkin/update */}
+          {historyRecords.some(isRecordToday) && (
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-5 rounded-2xl border border-blue-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-md bg-blue-600 text-white text-[10px] font-black uppercase tracking-wider">
+                    มีข้อมูลของวันนี้
+                  </span>
+                  <span className="text-xs font-bold text-blue-900">
+                    สามารถแก้ไขข้อมูลของวันนี้ได้โดยตรงจากรายการด้านล่าง หรือสลับไปยังหน้า "เช็คชื่อวันนี้"
+                  </span>
                 </div>
               </div>
-            );
-          }) : (
-            <div className="col-span-full py-24 text-center bg-white rounded-[40px] border-4 border-dashed border-slate-50">
-               <History size={64} className="mx-auto text-slate-100 mb-6" />
-               <p className="text-slate-300 font-black uppercase tracking-[0.3em] text-sm">ไม่พบข้อมูลประวัติ</p>
+              <button 
+                onClick={() => setViewMode('checkin')} 
+                className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl text-xs font-black hover:bg-blue-700 transition-all shadow-md shrink-0 active:scale-95"
+              >
+                <Edit3 size={14} /> ไปหน้าอัพเดทข้อมูลวันนี้
+              </button>
             </div>
           )}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {historyRecords.length > 0 ? historyRecords.map((record) => {
+              const student = morningStudents.find(s => s.id === record.studentId) || students.find(s => s.id === record.studentId);
+              const isToday = isRecordToday(record);
+
+              return (
+                <div 
+                  key={record.id} 
+                  className={`bg-white p-6 rounded-[32px] border flex flex-col gap-4 shadow-sm hover:shadow-md transition-all ${
+                    isToday ? 'border-blue-300 bg-blue-50/5' : 'border-slate-200'
+                  }`}
+                >
+                  <div className="flex justify-between items-start">
+                    <div className="flex items-center gap-4">
+                      <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shadow-inner ${
+                        isToday ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-600'
+                      }`}>
+                        <ClipboardCheck size={20} />
+                      </div>
+                      <div>
+                         <p className="text-sm font-black text-slate-900 font-heading leading-none">{student?.name || record.studentId}</p>
+                         <div className="flex items-center gap-2 mt-1">
+                           <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{record.date}</span>
+                           {isToday && (
+                             <span className="px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 text-[8px] font-black">
+                               วันนี้
+                             </span>
+                           )}
+                         </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className={`px-4 py-1.5 rounded-full text-[9px] font-black border uppercase tracking-widest shadow-sm ${STATUS_LABELS[record.status].color}`}>
+                        {STATUS_LABELS[record.status].label}
+                      </span>
+
+                      {/* Edit Button for Today's Record in History */}
+                      {isToday && (
+                        <button 
+                          onClick={() => handleOpenEditHistory(record)} 
+                          className="p-1.5 rounded-lg text-blue-600 bg-blue-50 hover:bg-blue-100 transition-all"
+                          title="แก้ไขข้อมูลของวันนี้"
+                        >
+                          <Edit3 size={14} />
+                        </button>
+                      )}
+
+                      {/* Delete button */}
+                      {confirmDeleteId === record.id ? (
+                        <div className="flex items-center gap-1.5 animate-in slide-in-from-right-2 duration-300">
+                          <button onClick={() => setConfirmDeleteId(null)} className="p-1.5 bg-slate-100 text-slate-500 rounded-lg hover:bg-slate-200 transition-all"><X size={14} /></button>
+                          <button onClick={() => deleteSingleRecord(record.id)} className="p-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-all shadow-md"><Check size={14} /></button>
+                        </div>
+                      ) : (
+                        <button 
+                          onClick={() => setConfirmDeleteId(record.id)}
+                          disabled={isDeleting}
+                          className={`p-1.5 rounded-lg transition-all ${isDeleting ? 'text-slate-200 cursor-not-allowed' : 'text-slate-300 hover:text-red-500 hover:bg-red-50'}`}
+                          title="ลบรายการนี้"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {record.remark && (
+                    <div className="p-3 bg-slate-50 rounded-2xl text-[10px] font-bold text-slate-600 flex items-center gap-3 border border-slate-100">
+                      <MessageSquare size={14} className="text-slate-400 shrink-0" /> 
+                      <span className="truncate">{record.remark}</span>
+                    </div>
+                  )}
+
+                  <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest flex items-center justify-between pt-1 border-t border-slate-100">
+                     <span className="flex items-center gap-1 opacity-70">
+                       <Clock size={12} /> {record.timestamp}
+                     </span>
+                     {isToday && (
+                       <button 
+                         onClick={() => handleOpenEditHistory(record)} 
+                         className="text-blue-600 hover:underline font-black text-[9px]"
+                       >
+                         แก้ไขสถานะ
+                       </button>
+                     )}
+                  </div>
+                </div>
+              );
+            }) : (
+              <div className="col-span-full py-24 text-center bg-white rounded-[40px] border-4 border-dashed border-slate-50">
+                 <History size={64} className="mx-auto text-slate-100 mb-6" />
+                 <p className="text-slate-300 font-black uppercase tracking-[0.3em] text-sm">ไม่พบข้อมูลประวัติ</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Edit Record from History */}
+      {editingHistoryRecord && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-md rounded-[32px] p-6 md:p-8 space-y-6 shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b pb-4">
+              <div>
+                <h3 className="text-lg font-black text-slate-900 font-heading">แก้ไขข้อมูลการเข้าแถววันนี้</h3>
+                <p className="text-xs font-bold text-slate-500 mt-0.5">
+                  {morningStudents.find(s => s.id === editingHistoryRecord.studentId)?.name || editingHistoryRecord.studentId}
+                </p>
+              </div>
+              <button 
+                onClick={() => setEditingHistoryRecord(null)}
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-2 font-heading">เลือกสถานะใหม่</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {Object.entries(STATUS_LABELS).map(([key, value]) => (
+                    <button 
+                      key={key} 
+                      type="button"
+                      onClick={() => setEditHistoryStatus(key as AttendanceStatus)} 
+                      className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-all ${
+                        editHistoryStatus === key 
+                          ? value.color + ' border-current shadow-md font-black' 
+                          : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+                      }`}
+                    >
+                      <div>{value.icon}</div>
+                      <span className="text-xs font-bold">{value.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1 font-heading">หมายเหตุ (ถ้ามี)</label>
+                <input 
+                  type="text" 
+                  value={editHistoryRemark} 
+                  onChange={(e) => setEditHistoryRemark(e.target.value)} 
+                  placeholder="ระบุเหตุผล เช่น มาสายเนื่องจากฝนตก..." 
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 font-bold text-xs text-slate-900 outline-none focus:border-blue-500 transition-all"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 pt-4 border-t">
+              <button 
+                type="button" 
+                onClick={() => setEditingHistoryRecord(null)} 
+                className="flex-1 py-3 px-4 rounded-xl border border-slate-200 text-slate-600 text-xs font-black hover:bg-slate-50 transition-all"
+              >
+                ยกเลิก
+              </button>
+              <button 
+                type="button" 
+                onClick={handleSaveHistoryEdit} 
+                disabled={isHistorySaving}
+                className="flex-1 py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-black shadow-lg shadow-blue-200 flex items-center justify-center gap-2 transition-all"
+              >
+                {isHistorySaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                <span>{isHistorySaving ? 'กำลังบันทึก...' : 'บันทึกการแก้ไข'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Save Action Bar on Mobile/Tablet */}
+      {viewMode === 'checkin' && filteredStudents.length > 0 && (
+        <div className="md:hidden fixed bottom-6 left-4 right-4 z-40 bg-slate-900/95 backdrop-blur-md text-white p-4 rounded-2xl shadow-2xl border border-white/10 flex items-center justify-between gap-3 animate-in slide-in-from-bottom-6">
+          <div className="text-xs font-bold text-slate-300">
+            <span className="text-emerald-400 font-black">มา {stats.presents}</span> • <span className="text-amber-400 font-black">สาย {stats.lates}</span> • <span className="text-red-400 font-black">ขาด {stats.absents}</span>
+          </div>
+          <button 
+            onClick={handleSave} 
+            disabled={isSaving}
+            className={`px-5 py-2.5 rounded-xl text-xs font-black shadow-lg transition-all active:scale-95 flex items-center gap-2 ${
+              isSaved ? 'bg-green-600 text-white' :
+              hasExistingTodayRecords ? 'bg-emerald-500 hover:bg-emerald-600 text-white' : 'bg-blue-600 text-white'
+            }`}
+          >
+            {isSaving ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={14} />}
+            <span>{isSaving ? 'กำลังบันทึก...' : isSaved ? 'สำเร็จ!' : hasExistingTodayRecords ? 'อัพเดทวันนี้' : 'บันทึกวันนี้'}</span>
+          </button>
         </div>
       )}
     </div>
