@@ -112,7 +112,9 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
 
   const filteredStudents = useMemo(() => {
     return morningStudents.filter(s => 
-      s.level === level && s.department === dept && s.room === room &&
+      getCleanLevel(s.level) === getCleanLevel(level) && 
+      s.department === dept && 
+      String(s.room || '1').trim() === String(room).trim() &&
       (s.name.toLowerCase().includes(searchTerm.toLowerCase()) || s.studentId.includes(searchTerm))
     );
   }, [morningStudents, level, dept, room, searchTerm]);
@@ -139,24 +141,32 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
     const sessionMap: Record<string, AttendanceStatus> = {};
     const remarkMap: Record<string, string> = {};
 
-    existingTodayRecords.forEach(r => {
-      sessionMap[r.studentId] = r.status;
-      if (r.remark) remarkMap[r.studentId] = r.remark;
-    });
+    if (existingTodayRecords.length > 0) {
+      existingTodayRecords.forEach(r => {
+        sessionMap[r.studentId] = r.status;
+        if (r.remark) remarkMap[r.studentId] = r.remark;
+      });
+      // Do not default unrecorded students to any status; leave them unselected
+    } else {
+      // Default to empty: no status is selected for any student initially
+    }
 
     setCurrentSession(sessionMap);
     setRemarks(remarkMap);
     setHasUnsavedChanges(false);
-  }, [level, dept, room, existingTodayRecords.length]);
+  }, [level, dept, room, filteredStudents.length, existingTodayRecords.length]);
 
   // Reload today's data from existing records
   const reloadTodayData = () => {
     const sessionMap: Record<string, AttendanceStatus> = {};
     const remarkMap: Record<string, string> = {};
-    existingTodayRecords.forEach(r => {
-      sessionMap[r.studentId] = r.status;
-      if (r.remark) remarkMap[r.studentId] = r.remark;
-    });
+    if (existingTodayRecords.length > 0) {
+      existingTodayRecords.forEach(r => {
+        sessionMap[r.studentId] = r.status;
+        if (r.remark) remarkMap[r.studentId] = r.remark;
+      });
+    }
+    // Students without an existing record remain unselected
     setCurrentSession(sessionMap);
     setRemarks(remarkMap);
     setHasUnsavedChanges(false);
@@ -179,14 +189,24 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
   const historyRecords = useMemo(() => {
     return attendanceRecords.filter(record => {
       const student = morningStudents.find(s => s.id === record.studentId);
-      const matchesFilter = record.type === 'MORNING' && student?.level === level && student?.department === dept && student?.room === room;
+      const matchesFilter = record.type === 'MORNING' && 
+        getCleanLevel(student?.level || '') === getCleanLevel(level) && 
+        student?.department === dept && 
+        String(student?.room || '1').trim() === String(room).trim();
       const matchesDate = selectedHistoryDate ? record.date === selectedHistoryDate : true;
       return matchesFilter && matchesDate;
     }).sort((a, b) => b.date.localeCompare(a.date));
   }, [attendanceRecords, morningStudents, level, dept, room, selectedHistoryDate]);
 
   const handleStatusChange = (studentId: string, status: AttendanceStatus) => {
-    setCurrentSession(prev => ({ ...prev, [studentId]: status }));
+    setCurrentSession(prev => {
+      if (prev[studentId] === status) {
+        const next = { ...prev };
+        delete next[studentId];
+        return next;
+      }
+      return { ...prev, [studentId]: status };
+    });
     setHasUnsavedChanges(true);
     setIsSaved(false);
   };
@@ -224,18 +244,26 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
 
   // Save or Update Attendance for the entire selected room
   const handleSave = async () => {
+    const studentsWithStatus = filteredStudents.filter(s => !!currentSession[s.id]);
+
+    if (studentsWithStatus.length === 0) {
+      setSaveMessage('⚠️ ยังไม่ได้เลือกสถานะของนักเรียน กรุณาเลือกสถานะก่อนบันทึก (หรือใช้ปุ่ม "มาทุกคน")');
+      setTimeout(() => setSaveMessage(''), 3500);
+      return;
+    }
+
     setIsSaving(true);
     await new Promise(resolve => setTimeout(resolve, 400));
     const todayDate = getTodayDateString();
     const utcDate = new Date().toISOString().split('T')[0];
     const timestamp = new Date().toLocaleString('th-TH');
 
-    const newRecordsBatch: AttendanceRecord[] = filteredStudents.map(s => ({
+    const newRecordsBatch: AttendanceRecord[] = studentsWithStatus.map(s => ({
       id: `MORNING_${todayDate}_${s.id}`,
       studentId: s.id,
       date: todayDate,
       type: 'MORNING',
-      status: currentSession[s.id] || 'ABSENT',
+      status: currentSession[s.id],
       remark: remarks[s.id] || '',
       timestamp: timestamp
     }));
@@ -244,7 +272,7 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
     await saveMultipleToFirestore('attendance', newRecordsBatch);
     
     setAttendanceRecords(prev => {
-      const studentIds = new Set(filteredStudents.map(s => s.id));
+      const studentIds = new Set(studentsWithStatus.map(s => s.id));
       const otherRecords = prev.filter(r => 
         !(r.type === 'MORNING' && studentIds.has(r.studentId) && (r.date === todayDate || r.date === utcDate))
       );
@@ -254,15 +282,24 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
     setIsSaving(false);
     setIsSaved(true);
     setHasUnsavedChanges(false);
-    setSaveMessage(hasExistingTodayRecords ? 'อัพเดทข้อมูลการเข้าแถววันนี้สำเร็จเรียบร้อยแล้ว!' : 'บันทึกการเช็คชื่อเข้าแถววันนี้สำเร็จเรียบร้อยแล้ว!');
+    const unselectedCount = filteredStudents.length - studentsWithStatus.length;
+    const extraMsg = unselectedCount > 0 ? ` (บันทึกแล้ว ${studentsWithStatus.length} คน, ยังไม่เช็ค ${unselectedCount} คน)` : '';
+    setSaveMessage((hasExistingTodayRecords ? 'อัพเดทข้อมูลการเข้าแถววันนี้สำเร็จเรียบร้อยแล้ว!' : 'บันทึกการเช็คชื่อเข้าแถววันนี้สำเร็จเรียบร้อยแล้ว!') + extraMsg);
     setTimeout(() => {
       setIsSaved(false);
       setSaveMessage('');
-    }, 3000);
+    }, 3500);
   };
 
   // Quick Save / Update for a single student (e.g. student arriving late)
   const handleSaveSingleStudent = async (studentId: string) => {
+    const status = currentSession[studentId];
+    if (!status) {
+      setSaveMessage('⚠️ กรุณาเลือกสถานะ (มา/สาย/ลา/ขาด) ของนักเรียนคนนี้ก่อนบันทึก');
+      setTimeout(() => setSaveMessage(''), 3000);
+      return;
+    }
+
     setUpdatingStudentId(studentId);
     const todayDate = getTodayDateString();
     const utcDate = new Date().toISOString().split('T')[0];
@@ -273,7 +310,7 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
       studentId: studentId,
       date: todayDate,
       type: 'MORNING',
-      status: currentSession[studentId] || 'ABSENT',
+      status: status,
       remark: remarks[studentId] || '',
       timestamp: timestamp
     };
@@ -292,7 +329,8 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
       setSaveMessage(`อัพเดทข้อมูลของนักเรียนสำเร็จ (${timestamp.split(' ')[1] || 'บันทึกแล้ว'})`);
       setTimeout(() => setSaveMessage(''), 2500);
     } catch (e) {
-      alert('เกิดข้อผิดพลาดในการอัพเดทข้อมูล');
+      setSaveMessage('เกิดข้อผิดพลาดในการอัพเดทข้อมูล');
+      setTimeout(() => setSaveMessage(''), 3000);
     } finally {
       setUpdatingStudentId(null);
     }
@@ -334,19 +372,27 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
     setIsSaved(false);
   };
 
+  const clearAll = () => {
+    setCurrentSession({});
+    setHasUnsavedChanges(true);
+    setIsSaved(false);
+  };
+
   // Calculate live stats for the current view
   const stats = useMemo(() => {
     let presents = 0;
     let lates = 0;
     let leaves = 0;
     let absents = 0;
+    let unselected = 0;
 
     filteredStudents.forEach(s => {
       const st = currentSession[s.id];
       if (st === 'PRESENT') presents++;
       else if (st === 'LATE') lates++;
       else if (st === 'SICK_LEAVE' || st === 'BUSINESS_LEAVE') leaves++;
-      else absents++;
+      else if (st === 'ABSENT') absents++;
+      else unselected++;
     });
 
     return {
@@ -354,7 +400,8 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
       presents,
       lates,
       leaves,
-      absents
+      absents,
+      unselected
     };
   }, [filteredStudents, currentSession]);
 
@@ -375,20 +422,24 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
     text += `--------------------------\n`;
     
     filteredStudents.forEach((s, idx) => {
-      const status = currentSession[s.id] || 'ABSENT';
-      let label = '';
+      const status = currentSession[s.id];
+      let label = '(ยังไม่เช็ค)';
       if (status === 'PRESENT') label = '(มา)';
       else if (status === 'LATE') label = '(สาย)';
       else if (status === 'SICK_LEAVE') label = '(ลาป่วย)';
       else if (status === 'BUSINESS_LEAVE') label = '(ลากิจ)';
-      else label = '(ขาด)';
+      else if (status === 'ABSENT') label = '(ขาด)';
       
       const rmk = remarks[s.id] ? ` [${remarks[s.id]}]` : '';
       text += `${idx + 1}. ${s.name} ${label}${rmk}\n`;
     });
     text += `--------------------------\n`;
     
-    text += `มา: ${stats.presents} | สาย: ${stats.lates} | ลา: ${stats.leaves} | ขาด: ${stats.absents} | รวม: ${stats.total}\n`;
+    text += `มา: ${stats.presents} | สาย: ${stats.lates} | ลา: ${stats.leaves} | ขาด: ${stats.absents}`;
+    if (stats.unselected > 0) {
+      text += ` | ยังไม่เช็ค: ${stats.unselected}`;
+    }
+    text += ` | รวม: ${stats.total}\n`;
     text += `ระบบ EduSmart CMS`;
     window.open(`https://line.me/R/msg/text/?${encodeURIComponent(text)}`, '_blank');
   };
@@ -634,10 +685,14 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
           </div>
 
           {/* Quick Real-Time Statistics Counters */}
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 mt-4 pt-4 border-t border-slate-200/60">
+          <div className="grid grid-cols-2 sm:grid-cols-6 gap-2.5 mt-4 pt-4 border-t border-slate-200/60">
             <div className="bg-white/80 backdrop-blur-sm p-2.5 rounded-xl border border-slate-200/60 text-center">
               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">นักเรียนทั้งหมด</p>
               <p className="text-lg font-black text-slate-800 font-heading">{stats.total} คน</p>
+            </div>
+            <div className="bg-slate-100/90 p-2.5 rounded-xl border border-slate-200/80 text-center">
+              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">ยังไม่เช็ค</p>
+              <p className="text-lg font-black text-slate-600 font-heading">{stats.unselected} คน</p>
             </div>
             <div className="bg-green-50/80 p-2.5 rounded-xl border border-green-200/60 text-center">
               <p className="text-[10px] font-black text-green-700 uppercase tracking-widest">มา</p>
@@ -651,7 +706,7 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
               <p className="text-[10px] font-black text-blue-700 uppercase tracking-widest">ลา</p>
               <p className="text-lg font-black text-blue-800 font-heading">{stats.leaves} คน</p>
             </div>
-            <div className="bg-red-50/80 p-2.5 rounded-xl border border-red-200/60 text-center col-span-2 sm:col-span-1">
+            <div className="bg-red-50/80 p-2.5 rounded-xl border border-red-200/60 text-center">
               <p className="text-[10px] font-black text-red-700 uppercase tracking-widest">ขาด</p>
               <p className="text-lg font-black text-red-800 font-heading">{stats.absents} คน</p>
             </div>
@@ -701,18 +756,25 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
         <>
           {/* Quick Mark All Buttons & Primary Save Button */}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 px-1">
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <button 
                 onClick={() => markAll('PRESENT')} 
-                className="flex-1 md:flex-none px-6 py-3 bg-green-50 text-green-700 rounded-xl text-[10px] font-black border border-green-200 uppercase tracking-widest hover:bg-green-100 transition-all active:scale-95"
+                className="flex-1 md:flex-none px-5 py-3 bg-green-50 text-green-700 rounded-xl text-[10px] font-black border border-green-200 uppercase tracking-widest hover:bg-green-100 transition-all active:scale-95"
               >
                 มาทุกคน
               </button>
               <button 
                 onClick={() => markAll('ABSENT')} 
-                className="flex-1 md:flex-none px-6 py-3 bg-red-50 text-red-700 rounded-xl text-[10px] font-black border border-red-200 uppercase tracking-widest hover:bg-red-100 transition-all active:scale-95"
+                className="flex-1 md:flex-none px-5 py-3 bg-red-50 text-red-700 rounded-xl text-[10px] font-black border border-red-200 uppercase tracking-widest hover:bg-red-100 transition-all active:scale-95"
               >
                 ขาดทุกคน
+              </button>
+              <button 
+                onClick={clearAll} 
+                className="flex-1 md:flex-none px-4 py-3 bg-slate-50 text-slate-600 rounded-xl text-[10px] font-black border border-slate-200 uppercase tracking-widest hover:bg-slate-100 transition-all active:scale-95"
+                title="ยกเลิกการเลือกสถานะทั้งหมด ให้กลับเป็นค่าว่าง"
+              >
+                ล้างสถานะ
               </button>
             </div>
 
@@ -750,18 +812,23 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
           {/* Student Checkin Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
             {filteredStudents.map((student, index) => {
-              const currentStatus = currentSession[student.id] || 'ABSENT';
+              const currentStatus = currentSession[student.id];
               const existingRecord = existingTodayRecords.find(r => r.studentId === student.id);
-              const isStatusChanged = existingRecord && existingRecord.status !== currentStatus;
+              const isStatusChanged = existingRecord && currentStatus && existingRecord.status !== currentStatus;
 
               return (
                 <div 
                   key={student.id} 
-                  className={`bg-white p-6 rounded-[32px] border-2 flex flex-col gap-4 group transition-all relative overflow-hidden shadow-sm hover:shadow-md ${
-                    currentStatus === 'PRESENT' ? 'border-green-400/80 bg-green-50/15' : 
-                    currentStatus === 'LATE' ? 'border-amber-400/80 bg-amber-50/15' :
-                    currentStatus === 'SICK_LEAVE' || currentStatus === 'BUSINESS_LEAVE' ? 'border-blue-400/80 bg-blue-50/15' :
-                    'border-slate-200 hover:border-blue-300'
+                  className={`p-6 rounded-[32px] border-2 flex flex-col gap-4 group transition-all relative overflow-hidden shadow-sm hover:shadow-md ${
+                    !currentStatus 
+                      ? 'bg-white border-slate-200 hover:border-slate-300' 
+                      : currentStatus === 'PRESENT' 
+                      ? 'bg-green-50/15 border-green-400/80' 
+                      : currentStatus === 'LATE' 
+                      ? 'bg-amber-50/15 border-amber-400/80' 
+                      : currentStatus === 'SICK_LEAVE' || currentStatus === 'BUSINESS_LEAVE' 
+                      ? 'bg-blue-50/15 border-blue-400/80' 
+                      : 'bg-red-50/15 border-red-400/80'
                   }`}
                 >
                   {/* Status Indicator Background Watermark */}
@@ -790,15 +857,23 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
                             <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[9px] font-black animate-pulse">
                               แก้เป็น {STATUS_LABELS[currentStatus].label}
                             </span>
+                          ) : currentStatus ? (
+                            <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-700 text-[9px] font-bold">
+                              บันทึกแล้ว: {STATUS_LABELS[existingRecord.status].label}
+                            </span>
                           ) : (
                             <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[9px] font-bold">
                               เดิม: {STATUS_LABELS[existingRecord.status].label}
                             </span>
                           )}
                         </div>
+                      ) : currentStatus ? (
+                        <span className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-600 text-[9px] font-bold">
+                          เลือก: {STATUS_LABELS[currentStatus].label}
+                        </span>
                       ) : (
-                        <span className="px-2 py-0.5 rounded-md bg-slate-50 text-slate-400 text-[9px] font-bold">
-                          ยังไม่บันทึก
+                        <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-400 text-[9px] font-bold">
+                          ยังไม่เลือกสถานะ
                         </span>
                       )}
                     </div>
@@ -806,20 +881,23 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
                   
                   {/* Status Selection Buttons */}
                   <div className="grid grid-cols-5 gap-2">
-                    {Object.entries(STATUS_LABELS).map(([key, value]) => (
-                      <button 
-                        key={key} 
-                        onClick={() => handleStatusChange(student.id, key as AttendanceStatus)} 
-                        className={`flex flex-col items-center gap-2 p-2 rounded-xl border-2 transition-all active:scale-95 ${
-                          currentStatus === key 
-                            ? value.color + ' border-current shadow-md ring-2 ring-current/20 font-black' 
-                            : 'bg-white border-slate-100 text-slate-400 hover:border-slate-200 hover:text-slate-600'
-                        }`}
-                      >
-                        <div className="scale-90 md:scale-100">{value.icon}</div>
-                        <span className="text-[8px] font-black uppercase text-center leading-tight tracking-tighter">{value.label}</span>
-                      </button>
-                    ))}
+                    {Object.entries(STATUS_LABELS).map(([key, value]) => {
+                      const isSelected = currentStatus === key;
+                      return (
+                        <button 
+                          key={key} 
+                          onClick={() => handleStatusChange(student.id, key as AttendanceStatus)} 
+                          className={`flex flex-col items-center gap-2 p-2 rounded-xl border-2 transition-all active:scale-95 ${
+                            isSelected 
+                              ? value.color + ' border-current shadow-md ring-2 ring-current/20 font-black' 
+                              : 'bg-white border-slate-100 text-slate-400 hover:border-slate-200 hover:text-slate-600'
+                          }`}
+                        >
+                          <div className="scale-90 md:scale-100">{value.icon}</div>
+                          <span className="text-[8px] font-black uppercase text-center leading-tight tracking-tighter">{value.label}</span>
+                        </button>
+                      );
+                    })}
                   </div>
 
                   {/* Remark input if not present */}

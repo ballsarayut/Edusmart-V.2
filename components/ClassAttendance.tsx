@@ -103,6 +103,15 @@ const ClassAttendance: React.FC<ClassAttendanceProps> = ({
   const [isSaved, setIsSaved] = useState(false);
   const [isSubjectSaving, setIsSubjectSaving] = useState(false);
 
+  const filteredStudents = useMemo(() => {
+    return shiftStudents.filter(s => 
+      getCleanLevel(s.level) === getCleanLevel(level) && 
+      s.department === dept && 
+      String(s.room || '1').trim() === String(room).trim() &&
+      (s.name.toLowerCase().includes(searchTerm.toLowerCase()) || s.studentId.includes(searchTerm))
+    );
+  }, [shiftStudents, level, dept, room, searchTerm]);
+
   useEffect(() => {
     if (!subjectId) {
       setSessionAttendance({});
@@ -115,32 +124,33 @@ const ClassAttendance: React.FC<ClassAttendanceProps> = ({
     const attMap: Record<string, AttendanceStatus> = {};
     const remMap: Record<string, string> = {};
     
-    existing.forEach(r => {
-      attMap[r.studentId] = r.status;
-      if (r.remark) remMap[r.studentId] = r.remark;
-    });
+    if (existing.length > 0) {
+      existing.forEach(r => {
+        attMap[r.studentId] = r.status;
+        if (r.remark) remMap[r.studentId] = r.remark;
+      });
+      filteredStudents.forEach(s => {
+        if (!attMap[s.id]) attMap[s.id] = 'PRESENT';
+      });
+    } else {
+      // Default all students to 'PRESENT' (มา) for a fresh subject check
+      filteredStudents.forEach(s => {
+        attMap[s.id] = 'PRESENT';
+      });
+    }
 
     setSessionAttendance(attMap);
     setRemarks(remMap);
-  }, [level, dept, room, subjectId, attendanceRecords]);
-
-  const filteredStudents = useMemo(() => {
-    return shiftStudents.filter(s => 
-      s.level === level && 
-      s.department === dept && 
-      s.room === room &&
-      (s.name.toLowerCase().includes(searchTerm.toLowerCase()) || s.studentId.includes(searchTerm))
-    );
-  }, [shiftStudents, level, dept, room, searchTerm]);
+  }, [level, dept, room, subjectId, attendanceRecords, filteredStudents.length]);
 
   const historyRecords = useMemo(() => {
     return attendanceRecords.filter(record => {
       const student = shiftStudents.find(s => s.id === record.studentId);
       const matchesFilter = record.type === 'SUBJECT' && 
              record.subjectId === subjectId &&
-             student?.level === level && 
+             getCleanLevel(student?.level || '') === getCleanLevel(level) && 
              student?.department === dept && 
-             student?.room === room;
+             String(student?.room || '1').trim() === String(room).trim();
       const matchesDate = selectedHistoryDate ? record.date === selectedHistoryDate : true;
       return matchesFilter && matchesDate;
     }).sort((a, b) => b.date.localeCompare(a.date) || b.timestamp.localeCompare(a.timestamp));
@@ -166,7 +176,7 @@ const ClassAttendance: React.FC<ClassAttendanceProps> = ({
       date: today,
       type: 'SUBJECT',
       subjectId: subjectId,
-      status: sessionAttendance[s.id] || 'ABSENT',
+      status: sessionAttendance[s.id] || 'PRESENT',
       remark: remarks[s.id] || '',
       timestamp: timestamp
     }));
@@ -191,6 +201,30 @@ const ClassAttendance: React.FC<ClassAttendanceProps> = ({
     setSessionAttendance(prev => ({ ...prev, ...newBatch }));
     setIsSaved(false);
   };
+
+  // Calculate live stats for the current view
+  const stats = useMemo(() => {
+    let presents = 0;
+    let lates = 0;
+    let leaves = 0;
+    let absents = 0;
+
+    filteredStudents.forEach(s => {
+      const st = sessionAttendance[s.id] || 'PRESENT';
+      if (st === 'PRESENT') presents++;
+      else if (st === 'LATE') lates++;
+      else if (st === 'SICK_LEAVE' || st === 'BUSINESS_LEAVE') leaves++;
+      else if (st === 'ABSENT') absents++;
+    });
+
+    return {
+      total: filteredStudents.length,
+      presents,
+      lates,
+      leaves,
+      absents
+    };
+  }, [filteredStudents, sessionAttendance]);
 
   const handleSaveSubject = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -377,10 +411,36 @@ const ClassAttendance: React.FC<ClassAttendanceProps> = ({
 
       {viewMode === 'checkin' ? (
         <>
+          {/* Real-time statistics bar */}
+          {filteredStudents.length > 0 && (
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm">
+              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/60 text-center">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">นักเรียนทั้งหมด</p>
+                <p className="text-lg font-black text-slate-800 font-heading">{stats.total} คน</p>
+              </div>
+              <div className="bg-green-50/80 p-2.5 rounded-xl border border-green-200/60 text-center">
+                <p className="text-[10px] font-black text-green-700 uppercase tracking-widest">มา</p>
+                <p className="text-lg font-black text-green-800 font-heading">{stats.presents} คน</p>
+              </div>
+              <div className="bg-amber-50/80 p-2.5 rounded-xl border border-amber-200/60 text-center">
+                <p className="text-[10px] font-black text-amber-700 uppercase tracking-widest">สาย</p>
+                <p className="text-lg font-black text-amber-800 font-heading">{stats.lates} คน</p>
+              </div>
+              <div className="bg-blue-50/80 p-2.5 rounded-xl border border-blue-200/60 text-center">
+                <p className="text-[10px] font-black text-blue-700 uppercase tracking-widest">ลา</p>
+                <p className="text-lg font-black text-blue-800 font-heading">{stats.leaves} คน</p>
+              </div>
+              <div className="bg-red-50/80 p-2.5 rounded-xl border border-red-200/60 text-center col-span-2 sm:col-span-1">
+                <p className="text-[10px] font-black text-red-700 uppercase tracking-widest">ขาด</p>
+                <p className="text-lg font-black text-red-800 font-heading">{stats.absents} คน</p>
+              </div>
+            </div>
+          )}
+
           <div className="flex justify-between items-center px-2">
             <div className="flex gap-3">
-              <button onClick={() => markAll('PRESENT')} className="px-5 py-2 bg-green-50 text-green-700 rounded-full text-xs font-black border border-green-200 transition-all hover:bg-green-100">มาทุกคน</button>
-              <button onClick={() => markAll('ABSENT')} className="px-5 py-2 bg-red-50 text-red-700 rounded-full text-xs font-black border border-red-200 transition-all hover:bg-red-100">ขาดทุกคน</button>
+              <button onClick={() => markAll('PRESENT')} className="px-5 py-2.5 bg-green-50 text-green-700 rounded-xl text-xs font-black border border-green-200 transition-all hover:bg-green-100 active:scale-95">มาทุกคน</button>
+              <button onClick={() => markAll('ABSENT')} className="px-5 py-2.5 bg-red-50 text-red-700 rounded-xl text-xs font-black border border-red-200 transition-all hover:bg-red-100 active:scale-95">ขาดทุกคน</button>
             </div>
             <button 
               onClick={handleSave} 
@@ -396,33 +456,58 @@ const ClassAttendance: React.FC<ClassAttendanceProps> = ({
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {filteredStudents.map((student, index) => (
-              <div key={student.id} className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm flex flex-col justify-between hover:border-blue-300 transition-all group">
-                <div className="flex justify-between items-start gap-4">
-                  <div className="flex items-start gap-4">
-                    <div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center font-black text-white shrink-0 group-hover:bg-blue-600 transition-colors">{index + 1}</div>
-                    <div>
-                      <h4 className="font-black text-slate-900 text-lg leading-tight">{student.name}</h4>
-                      <p className="text-[10px] text-slate-500 font-bold uppercase mt-1 tracking-widest">รหัส: {student.studentId}</p>
+            {filteredStudents.map((student, index) => {
+              const currentStatus = sessionAttendance[student.id] || 'PRESENT';
+              return (
+                <div 
+                  key={student.id} 
+                  className={`bg-white p-6 rounded-[32px] border-2 shadow-sm flex flex-col justify-between transition-all group hover:shadow-md ${
+                    currentStatus === 'PRESENT' ? 'border-green-400/80 bg-green-50/15' : 
+                    currentStatus === 'LATE' ? 'border-amber-400/80 bg-amber-50/15' :
+                    currentStatus === 'SICK_LEAVE' || currentStatus === 'BUSINESS_LEAVE' ? 'border-blue-400/80 bg-blue-50/15' :
+                    'border-red-400/80 bg-red-50/15'
+                  }`}
+                >
+                  <div className="flex justify-between items-start gap-4">
+                    <div className="flex items-start gap-4">
+                      <div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center font-black text-white shrink-0 group-hover:bg-blue-600 transition-colors">{index + 1}</div>
+                      <div>
+                        <h4 className="font-black text-slate-900 text-lg leading-tight font-heading">{student.name}</h4>
+                        <p className="text-[10px] text-slate-500 font-bold uppercase mt-1 tracking-widest">รหัส: {student.studentId}</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-5 gap-1.5">
+                      {Object.entries(STATUS_LABELS).map(([key, value]) => (
+                        <button 
+                          key={key} 
+                          onClick={() => handleStatusChange(student.id, key as AttendanceStatus)} 
+                          className={`flex flex-col items-center gap-1.5 p-2 rounded-xl border-2 transition-all active:scale-95 ${
+                            currentStatus === key 
+                              ? value.color + ' border-current shadow-sm ring-2 ring-current/20 font-black' 
+                              : 'bg-white border-slate-100 text-slate-400 hover:border-slate-200'
+                          }`}
+                        >
+                          <div className="scale-110">{value.icon}</div>
+                          <span className="text-[8px] font-black uppercase text-center leading-tight">{value.label}</span>
+                        </button>
+                      ))}
                     </div>
                   </div>
-                  <div className="grid grid-cols-5 gap-1.5">
-                    {Object.entries(STATUS_LABELS).map(([key, value]) => (
-                      <button key={key} onClick={() => handleStatusChange(student.id, key as AttendanceStatus)} className={`flex flex-col items-center gap-1.5 p-2 rounded-xl border-2 transition-all ${sessionAttendance[student.id] === key ? value.color + ' border-current shadow-sm' : 'bg-white border-slate-100 text-slate-400 hover:border-slate-200'}`}>
-                        <div className="scale-110">{value.icon}</div>
-                        <span className="text-[8px] font-black uppercase text-center">{value.label}</span>
-                      </button>
-                    ))}
-                  </div>
+                  {currentStatus && currentStatus !== 'PRESENT' && (
+                    <div className="mt-4 relative animate-in slide-in-from-top-1">
+                      <MessageSquare className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={14} />
+                      <input 
+                        type="text" 
+                        value={remarks[student.id] || ''} 
+                        onChange={(e) => setRemarks(prev => ({ ...prev, [student.id]: e.target.value }))} 
+                        placeholder="ระบุหมายเหตุ..." 
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-xs font-bold outline-none focus:border-blue-400 transition-all shadow-inner" 
+                      />
+                    </div>
+                  )}
                 </div>
-                {sessionAttendance[student.id] && sessionAttendance[student.id] !== 'PRESENT' && (
-                  <div className="mt-4 relative">
-                    <MessageSquare className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={14} />
-                    <input type="text" value={remarks[student.id] || ''} onChange={(e) => setRemarks(prev => ({ ...prev, [student.id]: e.target.value }))} placeholder="ระบุหมายเหตุ..." className="w-full bg-slate-50 border border-slate-100 rounded-xl pl-9 pr-4 py-2 text-xs font-bold outline-none focus:border-blue-400 transition-all" />
-                  </div>
-                )}
-              </div>
-            ))}
+              );
+            })}
             {filteredStudents.length === 0 && (
               <div className="col-span-full py-20 text-center bg-white rounded-[32px] border-2 border-dashed border-slate-100 text-slate-300">
                 <Users size={48} className="mx-auto mb-4 opacity-10" />
