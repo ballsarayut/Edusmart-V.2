@@ -63,6 +63,7 @@ export type StudentShift = 'NORMAL' | 'EVENING';
 
 export const isEveningStudent = (s: { shift?: string; level?: string; room?: string; department?: string }): boolean => {
   if (s.shift === 'EVENING') return true;
+  if (s.shift === 'NORMAL') return false;
   const l = String(s.level || '');
   const r = String(s.room || '');
   const d = String(s.department || '');

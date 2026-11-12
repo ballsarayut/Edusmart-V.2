@@ -58,6 +58,44 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   throw new Error(JSON.stringify(errInfo));
 }
 
+// Sanitize data before writing to Firestore: strips undefined fields so setDoc never fails
+export function sanitizeData<T>(obj: T): T {
+  if (obj === null || obj === undefined) return obj;
+  if (Array.isArray(obj)) {
+    return obj.map(sanitizeData).filter(item => item !== undefined) as unknown as T;
+  }
+  if (typeof obj === 'object') {
+    const clean: any = {};
+    for (const [key, val] of Object.entries(obj)) {
+      if (val !== undefined) {
+        clean[key] = sanitizeData(val);
+      }
+    }
+    return clean;
+  }
+  return obj;
+}
+
+export const fetchTodayAttendance = async (): Promise<any[]> => {
+  try {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const today = `${year}-${month}-${day}`;
+    const thaiToday = `${year + 543}-${month}-${day}`;
+    const utcToday = d.toISOString().split('T')[0];
+
+    const dateList = Array.from(new Set([today, thaiToday, utcToday]));
+    const q = query(collection(db, 'attendance'), where('date', 'in', dateList));
+    const snap = await getDocs(q);
+    return snap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+  } catch (err) {
+    console.error('Failed to fetch today attendance quick query:', err);
+    return [];
+  }
+};
+
 export const syncCollection = <T extends { id: string | number }>(
   collectionName: string, 
   callback: (data: T[]) => void
@@ -72,8 +110,9 @@ export const syncCollection = <T extends { id: string | number }>(
 
 export const saveToFirestore = async (collectionName: string, data: any) => {
   const path = `${collectionName}/${data.id}`;
+  const cleanData = sanitizeData(data);
   try {
-    await setDoc(doc(db, collectionName, String(data.id)), data);
+    await setDoc(doc(db, collectionName, String(data.id)), cleanData);
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -83,7 +122,8 @@ export const saveMultipleToFirestore = async (collectionName: string, dataArray:
   const batch = writeBatch(db);
   dataArray.forEach(item => {
     const docRef = doc(db, collectionName, String(item.id));
-    batch.set(docRef, item);
+    const cleanItem = sanitizeData(item);
+    batch.set(docRef, cleanItem);
   });
   try {
     await batch.commit();

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { onAuthStateChanged, signInAnonymously } from 'firebase/auth';
 import { auth } from './firebase';
-import { syncCollection, saveToFirestore, saveMultipleToFirestore } from './firebaseService';
+import { syncCollection, saveToFirestore, saveMultipleToFirestore, fetchTodayAttendance } from './firebaseService';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
 import MorningAttendance from './components/MorningAttendance';
@@ -47,19 +47,52 @@ const App: React.FC = () => {
   const [isSyncingWithCloud, setIsSyncingWithCloud] = useState(false);
   const [isFirebaseReady, setIsFirebaseReady] = useState(false);
   const [firebaseUser, setFirebaseUser] = useState<any>(null);
+  const [isStudentsLoaded, setIsStudentsLoaded] = useState(false);
 
   const [students, setStudents] = useState<Student[]>(() => {
     try {
       const cached = localStorage.getItem('cached_students_data');
+      const deletedIds: string[] = JSON.parse(localStorage.getItem('deleted_student_ids') || '[]');
+      const deletedSet = new Set(deletedIds);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.filter(s => !deletedSet.has(String(s.id)));
+        }
+      }
+      return MOCK_STUDENTS.filter(s => !deletedSet.has(String(s.id)));
+    } catch (e) {
+      return MOCK_STUDENTS;
+    }
+  });
+
+  useEffect(() => {
+    if (students && students.length > 0) {
+      try {
+        localStorage.setItem('cached_students_data', JSON.stringify(students));
+      } catch (e) {}
+    }
+  }, [students]);
+
+  const [attendance, setAttendance] = useState<AttendanceRecord[]>(() => {
+    try {
+      const cached = localStorage.getItem('cached_attendance_records');
       if (cached) {
         const parsed = JSON.parse(cached);
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
     } catch (e) {}
-    return MOCK_STUDENTS;
+    return [];
   });
-  const [isStudentsLoaded, setIsStudentsLoaded] = useState(true);
-  const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
+
+  useEffect(() => {
+    if (attendance && attendance.length > 0) {
+      try {
+        const slice = attendance.slice(-1500);
+        localStorage.setItem('cached_attendance_records', JSON.stringify(slice));
+      } catch (e) {}
+    }
+  }, [attendance]);
   const [behaviorRecords, setBehaviorRecords] = useState<BehaviorRecord[]>([]);
   const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
   const [loginLogs, setLoginLogs] = useState<LoginLog[]>([]);
@@ -178,31 +211,39 @@ const App: React.FC = () => {
     const unsubStudents = syncCollection<Student>('students', (data) => {
       console.log(`Synced ${data.length} students from cloud`);
       
-      // Normalize level and room, clean out ภาคค่ำ from level and set shift properly
-      const normalizedData = data.map(s => {
-        let nLevel = s.level ? String(s.level).trim() : '';
-        const isEve = s.shift === 'EVENING' || nLevel.includes('ภาคค่ำ') || String(s.room || '').includes('ภาคค่ำ') || String(s.department || '').includes('ภาคค่ำ');
-        
-        nLevel = nLevel.replace(/ภาคค่ำ/g, '').trim();
-        nLevel = nLevel.replace(/^(ปว[ชส])\.?\s*([1-3])$/, '$1. $2');
-        
-        let nRoom = s.room ? String(s.room).trim() : '1';
-        nRoom = nRoom.replace(/ภาคค่ำ/g, '').trim();
-        nRoom = nRoom.replace(/^ห้อง\s*([0-9]+)$/, '$1');
-        nRoom = nRoom.replace(/\s+/g, '');
-        if (!nRoom) nRoom = '1';
+      let deletedIds: string[] = [];
+      try {
+        deletedIds = JSON.parse(localStorage.getItem('deleted_student_ids') || '[]');
+      } catch (e) {}
+      const deletedSet = new Set(deletedIds);
 
-        let nDept = s.department ? String(s.department).trim() : '';
-        nDept = nDept.replace(/ภาคค่ำ/g, '').trim();
-        
-        return { 
-          ...s, 
-          level: nLevel, 
-          room: nRoom,
-          department: nDept,
-          shift: isEve ? ('EVENING' as const) : ('NORMAL' as const)
-        };
-      });
+      // Normalize level and room, clean out ภาคค่ำ from level and set shift properly
+      const normalizedData = data
+        .filter(s => !deletedSet.has(String(s.id)))
+        .map(s => {
+          let nLevel = s.level ? String(s.level).trim() : '';
+          const isEve = s.shift === 'EVENING' || (s.shift !== 'NORMAL' && (nLevel.includes('ภาคค่ำ') || String(s.room || '').includes('ภาคค่ำ') || String(s.department || '').includes('ภาคค่ำ')));
+          
+          nLevel = nLevel.replace(/ภาคค่ำ/g, '').trim();
+          nLevel = nLevel.replace(/^(ปว[ชส])\.?\s*([1-3])$/, '$1. $2');
+          
+          let nRoom = s.room ? String(s.room).trim() : '1';
+          nRoom = nRoom.replace(/ภาคค่ำ/g, '').trim();
+          nRoom = nRoom.replace(/^ห้อง\s*([0-9]+)$/, '$1');
+          nRoom = nRoom.replace(/\s+/g, '');
+          if (!nRoom) nRoom = '1';
+
+          let nDept = s.department ? String(s.department).trim() : '';
+          nDept = nDept.replace(/ภาคค่ำ/g, '').trim();
+          
+          return { 
+            ...s, 
+            level: nLevel, 
+            room: nRoom,
+            department: nDept,
+            shift: isEve ? ('EVENING' as const) : ('NORMAL' as const)
+          };
+        });
 
       if (normalizedData.length > 0) {
         setStudents(normalizedData);
@@ -211,25 +252,40 @@ const App: React.FC = () => {
           localStorage.setItem('cached_students_data', JSON.stringify(normalizedData));
         } catch (e) {}
       } else if (isFirebaseReady) {
-        // Cloud is empty, use MOCK as fallback for local view
-        setStudents(MOCK_STUDENTS);
-        setIsStudentsLoaded(true);
-        
-        // Try to seed cloud regardless of firebaseUser presence (using anon auth)
-        const lastAttempt = localStorage.getItem('last_seed_attempt');
-        const now = Date.now();
-        if (!lastAttempt || now - parseInt(lastAttempt) > 300000) {
-          localStorage.setItem('last_seed_attempt', now.toString());
-          console.log("Seeding mock students to cloud...");
-          saveMultipleToFirestore('students', MOCK_STUDENTS)
-            .then(() => console.log("Seeding successful"))
-            .catch(err => console.error("Seeding failed: ", err));
+        const hasSeeded = localStorage.getItem('seeded_students_v1');
+        if (!hasSeeded && data.length === 0) {
+          const activeMock = MOCK_STUDENTS.filter(s => !deletedSet.has(String(s.id)));
+          setStudents(activeMock);
+          setIsStudentsLoaded(true);
+        } else {
+          setStudents([]);
+          setIsStudentsLoaded(true);
         }
       }
       setIsSyncingWithCloud(false);
     });
 
-    const unsubAttendance = syncCollection<AttendanceRecord>('attendance', setAttendance);
+    // Fast path: load today's records immediately in <1s so morning checkin is visible instantly
+    fetchTodayAttendance().then(todayRecords => {
+      if (todayRecords && todayRecords.length > 0) {
+        setAttendance(prev => {
+          const todayIds = new Set(todayRecords.map(r => r.id));
+          const filteredPrev = prev.filter(r => !todayIds.has(r.id));
+          const merged = [...filteredPrev, ...todayRecords];
+          try {
+            localStorage.setItem('cached_attendance_records', JSON.stringify(merged.slice(-1500)));
+          } catch (e) {}
+          return merged;
+        });
+      }
+    });
+
+    const unsubAttendance = syncCollection<AttendanceRecord>('attendance', (data) => {
+      setAttendance(data);
+      try {
+        localStorage.setItem('cached_attendance_records', JSON.stringify(data.slice(-1500)));
+      } catch (e) {}
+    });
     const unsubBehavior = syncCollection<BehaviorRecord>('behavior', setBehaviorRecords);
     const unsubPayments = syncCollection<PaymentRecord>('payments', setPaymentRecords);
     const unsubNotifications = syncCollection<NotificationRecord>('notifications', setNotifications);

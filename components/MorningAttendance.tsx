@@ -28,11 +28,29 @@ const getTodayDateString = () => {
   return `${year}-${month}-${day}`;
 };
 
-// Check if record belongs to today (supporting both local date and UTC date format)
+const getTodayThaiDateString = () => {
+  const d = new Date();
+  const thaiYear = d.getFullYear() + 543;
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${thaiYear}-${month}-${day}`;
+};
+
+// Check if record belongs to today (supporting Gregorian, UTC, Thai Buddhist Era, and ID prefixes)
 const isRecordToday = (r: AttendanceRecord) => {
   const localToday = getTodayDateString();
   const utcToday = new Date().toISOString().split('T')[0];
-  return r.date === localToday || r.date === utcToday;
+  const thaiToday = getTodayThaiDateString();
+
+  if (r.date === localToday || r.date === utcToday || r.date === thaiToday) return true;
+  if (r.id) {
+    if (r.id.startsWith(`MORNING_${localToday}_`) || 
+        r.id.startsWith(`MORNING_${utcToday}_`) || 
+        r.id.startsWith(`MORNING_${thaiToday}_`)) {
+      return true;
+    }
+  }
+  return false;
 };
 
 const MorningAttendance: React.FC<MorningAttendanceProps> = ({ 
@@ -75,9 +93,10 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
     });
   }, [morningStudents]);
 
-  const [level, setLevel] = useState<string>(availableLevels[0] || 'ปวช. 1');
-  const [dept, setDept] = useState<string>(availableDepts[0] || '');
-  const [room, setRoom] = useState<string>(availableRooms[0] || '1');
+  // Remember selected level, department, and room across reloads and tab switches
+  const [level, setLevel] = useState<string>(() => localStorage.getItem('edusmart_morning_level') || '');
+  const [dept, setDept] = useState<string>(() => localStorage.getItem('edusmart_morning_dept') || '');
+  const [room, setRoom] = useState<string>(() => localStorage.getItem('edusmart_morning_room') || '');
   
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedHistoryDate, setSelectedHistoryDate] = useState<string>('');
@@ -104,11 +123,48 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
   const [lastScannedStudent, setLastScannedStudent] = useState<Student | null>(null);
   const scanInputRef = useRef<HTMLInputElement>(null);
 
+  // Hydrate level, dept, and room defaults while preserving saved choices
   useEffect(() => {
-    if (availableLevels.length > 0 && !level) setLevel(availableLevels[0]);
-    if (availableDepts.length > 0 && !dept) setDept(availableDepts[0]);
-    if (availableRooms.length > 0 && !room) setRoom(availableRooms[0]);
+    const savedLevel = localStorage.getItem('edusmart_morning_level');
+    if (availableLevels.length > 0) {
+      if (savedLevel && availableLevels.includes(savedLevel)) {
+        if (level !== savedLevel) setLevel(savedLevel);
+      } else if (!level || !availableLevels.includes(level)) {
+        setLevel(availableLevels[0]);
+      }
+    }
+
+    const savedDept = localStorage.getItem('edusmart_morning_dept');
+    if (availableDepts.length > 0) {
+      if (savedDept && availableDepts.includes(savedDept)) {
+        if (dept !== savedDept) setDept(savedDept);
+      } else if (!dept || !availableDepts.includes(dept)) {
+        setDept(availableDepts[0]);
+      }
+    }
+
+    const savedRoom = localStorage.getItem('edusmart_morning_room');
+    if (availableRooms.length > 0) {
+      if (savedRoom && availableRooms.includes(savedRoom)) {
+        if (room !== savedRoom) setRoom(savedRoom);
+      } else if (!room || !availableRooms.includes(room)) {
+        setRoom(availableRooms[0]);
+      }
+    }
   }, [availableLevels, availableDepts, availableRooms]);
+
+  const handleLevelChange = (newLevel: string) => {
+    setLevel(newLevel);
+    localStorage.setItem('edusmart_morning_level', newLevel);
+  };
+  const handleDeptChange = (newDept: string) => {
+    setDept(newDept);
+    localStorage.setItem('edusmart_morning_dept', newDept);
+  };
+  const handleRoomChange = (newRoom: string) => {
+    setRoom(newRoom);
+    localStorage.setItem('edusmart_morning_room', newRoom);
+  };
 
   const filteredStudents = useMemo(() => {
     return morningStudents.filter(s => 
@@ -119,12 +175,25 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
     );
   }, [morningStudents, level, dept, room, searchTerm]);
 
-  // Existing records recorded for today for students in the current room
+  // Existing records recorded for today for students in the current room (matching by both id and studentId)
   const existingTodayRecords = useMemo(() => {
-    const studentIds = new Set(filteredStudents.map(s => s.id));
-    return attendanceRecords.filter(r => 
-      r.type === 'MORNING' && isRecordToday(r) && studentIds.has(r.studentId)
-    );
+    const studentKeySet = new Set<string>();
+    filteredStudents.forEach(s => {
+      if (s.id) studentKeySet.add(String(s.id));
+      if (s.studentId) studentKeySet.add(String(s.studentId));
+    });
+
+    return attendanceRecords.filter(r => {
+      if (r.type !== 'MORNING' || !isRecordToday(r)) return false;
+      const rStudId = String(r.studentId || '');
+      if (studentKeySet.has(rStudId)) return true;
+      return filteredStudents.some(s => 
+        r.id === `MORNING_${r.date}_${s.id}` || 
+        r.id === `MORNING_${r.date}_${s.studentId}` ||
+        r.id.endsWith(`_${s.id}`) ||
+        r.id.endsWith(`_${s.studentId}`)
+      );
+    });
   }, [attendanceRecords, filteredStudents]);
 
   const hasExistingTodayRecords = existingTodayRecords.length > 0;
@@ -143,18 +212,42 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
 
     if (existingTodayRecords.length > 0) {
       existingTodayRecords.forEach(r => {
-        sessionMap[r.studentId] = r.status;
-        if (r.remark) remarkMap[r.studentId] = r.remark;
+        const student = filteredStudents.find(s => 
+          String(s.id) === String(r.studentId) || 
+          String(s.studentId) === String(r.studentId) ||
+          r.id.endsWith(`_${s.id}`) ||
+          r.id.endsWith(`_${s.studentId}`)
+        );
+        if (student) {
+          sessionMap[student.id] = r.status;
+          sessionMap[student.studentId] = r.status;
+          if (r.remark) {
+            remarkMap[student.id] = r.remark;
+            remarkMap[student.studentId] = r.remark;
+          }
+        } else {
+          sessionMap[r.studentId] = r.status;
+          if (r.remark) remarkMap[r.studentId] = r.remark;
+        }
       });
-      // Do not default unrecorded students to any status; leave them unselected
     } else {
-      // Default to empty: no status is selected for any student initially
+      // Room session fallback from localStorage in case cloud query is still resolving
+      const todayDate = getTodayDateString();
+      const localKey = `morning_session_${todayDate}_${level}_${dept}_${room}`;
+      try {
+        const saved = localStorage.getItem(localKey);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed && parsed.session) Object.assign(sessionMap, parsed.session);
+          if (parsed && parsed.remarks) Object.assign(remarkMap, parsed.remarks);
+        }
+      } catch (e) {}
     }
 
     setCurrentSession(sessionMap);
     setRemarks(remarkMap);
     setHasUnsavedChanges(false);
-  }, [level, dept, room, filteredStudents.length, existingTodayRecords.length]);
+  }, [level, dept, room, filteredStudents, existingTodayRecords]);
 
   // Reload today's data from existing records
   const reloadTodayData = () => {
@@ -162,9 +255,35 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
     const remarkMap: Record<string, string> = {};
     if (existingTodayRecords.length > 0) {
       existingTodayRecords.forEach(r => {
-        sessionMap[r.studentId] = r.status;
-        if (r.remark) remarkMap[r.studentId] = r.remark;
+        const student = filteredStudents.find(s => 
+          String(s.id) === String(r.studentId) || 
+          String(s.studentId) === String(r.studentId) ||
+          r.id.endsWith(`_${s.id}`) ||
+          r.id.endsWith(`_${s.studentId}`)
+        );
+        if (student) {
+          sessionMap[student.id] = r.status;
+          sessionMap[student.studentId] = r.status;
+          if (r.remark) {
+            remarkMap[student.id] = r.remark;
+            remarkMap[student.studentId] = r.remark;
+          }
+        } else {
+          sessionMap[r.studentId] = r.status;
+          if (r.remark) remarkMap[r.studentId] = r.remark;
+        }
       });
+    } else {
+      const todayDate = getTodayDateString();
+      const localKey = `morning_session_${todayDate}_${level}_${dept}_${room}`;
+      try {
+        const saved = localStorage.getItem(localKey);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed && parsed.session) Object.assign(sessionMap, parsed.session);
+          if (parsed && parsed.remarks) Object.assign(remarkMap, parsed.remarks);
+        }
+      } catch (e) {}
     }
     // Students without an existing record remain unselected
     setCurrentSession(sessionMap);
@@ -188,7 +307,12 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
 
   const historyRecords = useMemo(() => {
     return attendanceRecords.filter(record => {
-      const student = morningStudents.find(s => s.id === record.studentId);
+      const student = morningStudents.find(s => 
+        String(s.id) === String(record.studentId) || 
+        String(s.studentId) === String(record.studentId) ||
+        record.id.endsWith(`_${s.id}`) ||
+        record.id.endsWith(`_${s.studentId}`)
+      );
       const matchesFilter = record.type === 'MORNING' && 
         getCleanLevel(student?.level || '') === getCleanLevel(level) && 
         student?.department === dept && 
@@ -198,21 +322,29 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
     }).sort((a, b) => b.date.localeCompare(a.date));
   }, [attendanceRecords, morningStudents, level, dept, room, selectedHistoryDate]);
 
-  const handleStatusChange = (studentId: string, status: AttendanceStatus) => {
+  const handleStatusChange = (student: Student, status: AttendanceStatus) => {
     setCurrentSession(prev => {
-      if (prev[studentId] === status) {
-        const next = { ...prev };
-        delete next[studentId];
-        return next;
+      const isAlready = prev[student.id] === status || prev[student.studentId] === status;
+      const next = { ...prev };
+      if (isAlready) {
+        delete next[student.id];
+        delete next[student.studentId];
+      } else {
+        next[student.id] = status;
+        next[student.studentId] = status;
       }
-      return { ...prev, [studentId]: status };
+      return next;
     });
     setHasUnsavedChanges(true);
     setIsSaved(false);
   };
 
-  const handleRemarkChange = (studentId: string, remark: string) => {
-    setRemarks(prev => ({ ...prev, [studentId]: remark }));
+  const handleRemarkChange = (student: Student, remark: string) => {
+    setRemarks(prev => ({ 
+      ...prev, 
+      [student.id]: remark,
+      [student.studentId]: remark
+    }));
     setHasUnsavedChanges(true);
     setIsSaved(false);
   };
@@ -224,7 +356,7 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
     const scannedStudent = morningStudents.find(s => s.studentId === barcodeInput.trim());
     
     if (scannedStudent) {
-      handleStatusChange(scannedStudent.id, 'PRESENT');
+      handleStatusChange(scannedStudent, 'PRESENT');
       setLastScannedStudent(scannedStudent);
       
       try {
@@ -244,7 +376,7 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
 
   // Save or Update Attendance for the entire selected room
   const handleSave = async () => {
-    const studentsWithStatus = filteredStudents.filter(s => !!currentSession[s.id]);
+    const studentsWithStatus = filteredStudents.filter(s => !!(currentSession[s.id] || currentSession[s.studentId]));
 
     if (studentsWithStatus.length === 0) {
       setSaveMessage('⚠️ ยังไม่ได้เลือกสถานะของนักเรียน กรุณาเลือกสถานะก่อนบันทึก (หรือใช้ปุ่ม "มาทุกคน")');
@@ -253,30 +385,55 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
     }
 
     setIsSaving(true);
-    await new Promise(resolve => setTimeout(resolve, 400));
+    await new Promise(resolve => setTimeout(resolve, 300));
     const todayDate = getTodayDateString();
     const utcDate = new Date().toISOString().split('T')[0];
     const timestamp = new Date().toLocaleString('th-TH');
 
-    const newRecordsBatch: AttendanceRecord[] = studentsWithStatus.map(s => ({
-      id: `MORNING_${todayDate}_${s.id}`,
-      studentId: s.id,
-      date: todayDate,
-      type: 'MORNING',
-      status: currentSession[s.id],
-      remark: remarks[s.id] || '',
-      timestamp: timestamp
-    }));
+    const newRecordsBatch: AttendanceRecord[] = studentsWithStatus.map(s => {
+      const status = currentSession[s.id] || currentSession[s.studentId]!;
+      const remark = remarks[s.id] || remarks[s.studentId] || '';
+      return {
+        id: `MORNING_${todayDate}_${s.studentId}`,
+        studentId: s.studentId,
+        date: todayDate,
+        type: 'MORNING',
+        status: status,
+        remark: remark,
+        timestamp: timestamp
+      };
+    });
+
+    // Save per-room backup to localStorage immediately
+    const localKey = `morning_session_${todayDate}_${level}_${dept}_${room}`;
+    try {
+      localStorage.setItem(localKey, JSON.stringify({
+        session: currentSession,
+        remarks: remarks,
+        timestamp: timestamp,
+        updatedAt: Date.now()
+      }));
+    } catch (e) {}
     
     // Save/Overwrite in Firestore for multi-device sync
     await saveMultipleToFirestore('attendance', newRecordsBatch);
     
     setAttendanceRecords(prev => {
-      const studentIds = new Set(studentsWithStatus.map(s => s.id));
+      const studentKeys = new Set<string>();
+      studentsWithStatus.forEach(s => {
+        studentKeys.add(String(s.id));
+        studentKeys.add(String(s.studentId));
+      });
       const otherRecords = prev.filter(r => 
-        !(r.type === 'MORNING' && studentIds.has(r.studentId) && (r.date === todayDate || r.date === utcDate))
+        !(r.type === 'MORNING' && 
+          (studentKeys.has(String(r.studentId)) || studentKeys.has(String(r.id).replace(`MORNING_${r.date}_`, ''))) && 
+          (r.date === todayDate || r.date === utcDate))
       );
-      return [...otherRecords, ...newRecordsBatch];
+      const updated = [...otherRecords, ...newRecordsBatch];
+      try {
+        localStorage.setItem('cached_attendance_records', JSON.stringify(updated.slice(-1500)));
+      } catch (e) {}
+      return updated;
     });
 
     setIsSaving(false);
@@ -292,37 +449,54 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
   };
 
   // Quick Save / Update for a single student (e.g. student arriving late)
-  const handleSaveSingleStudent = async (studentId: string) => {
-    const status = currentSession[studentId];
+  const handleSaveSingleStudent = async (student: Student) => {
+    const status = currentSession[student.id] || currentSession[student.studentId];
     if (!status) {
       setSaveMessage('⚠️ กรุณาเลือกสถานะ (มา/สาย/ลา/ขาด) ของนักเรียนคนนี้ก่อนบันทึก');
       setTimeout(() => setSaveMessage(''), 3000);
       return;
     }
 
-    setUpdatingStudentId(studentId);
+    setUpdatingStudentId(student.id);
     const todayDate = getTodayDateString();
     const utcDate = new Date().toISOString().split('T')[0];
     const timestamp = new Date().toLocaleString('th-TH');
 
     const newRecord: AttendanceRecord = {
-      id: `MORNING_${todayDate}_${studentId}`,
-      studentId: studentId,
+      id: `MORNING_${todayDate}_${student.studentId}`,
+      studentId: student.studentId,
       date: todayDate,
       type: 'MORNING',
       status: status,
-      remark: remarks[studentId] || '',
+      remark: remarks[student.id] || remarks[student.studentId] || '',
       timestamp: timestamp
     };
 
     try {
       await saveToFirestore('attendance', newRecord);
 
+      // Save to local key cache as well
+      const localKey = `morning_session_${todayDate}_${level}_${dept}_${room}`;
+      try {
+        localStorage.setItem(localKey, JSON.stringify({
+          session: currentSession,
+          remarks: remarks,
+          timestamp: timestamp,
+          updatedAt: Date.now()
+        }));
+      } catch (e) {}
+
       setAttendanceRecords(prev => {
         const otherRecords = prev.filter(r => 
-          !(r.type === 'MORNING' && r.studentId === studentId && (r.date === todayDate || r.date === utcDate))
+          !(r.type === 'MORNING' && 
+            (String(r.studentId) === String(student.id) || String(r.studentId) === String(student.studentId)) && 
+            (r.date === todayDate || r.date === utcDate))
         );
-        return [...otherRecords, newRecord];
+        const updated = [...otherRecords, newRecord];
+        try {
+          localStorage.setItem('cached_attendance_records', JSON.stringify(updated.slice(-1500)));
+        } catch (e) {}
+        return updated;
       });
 
       // Quick visual feedback
@@ -366,7 +540,10 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
 
   const markAll = (status: AttendanceStatus) => {
     const newBatch: Record<string, AttendanceStatus> = {};
-    filteredStudents.forEach(s => { newBatch[s.id] = status; });
+    filteredStudents.forEach(s => { 
+      newBatch[s.id] = status; 
+      newBatch[s.studentId] = status; 
+    });
     setCurrentSession(prev => ({ ...prev, ...newBatch }));
     setHasUnsavedChanges(true);
     setIsSaved(false);
@@ -374,6 +551,7 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
 
   const clearAll = () => {
     setCurrentSession({});
+    setRemarks({});
     setHasUnsavedChanges(true);
     setIsSaved(false);
   };
@@ -387,7 +565,7 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
     let unselected = 0;
 
     filteredStudents.forEach(s => {
-      const st = currentSession[s.id];
+      const st = currentSession[s.id] || currentSession[s.studentId];
       if (st === 'PRESENT') presents++;
       else if (st === 'LATE') lates++;
       else if (st === 'SICK_LEAVE' || st === 'BUSINESS_LEAVE') leaves++;
@@ -422,7 +600,7 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
     text += `--------------------------\n`;
     
     filteredStudents.forEach((s, idx) => {
-      const status = currentSession[s.id];
+      const status = currentSession[s.id] || currentSession[s.studentId];
       let label = '(ยังไม่เช็ค)';
       if (status === 'PRESENT') label = '(มา)';
       else if (status === 'LATE') label = '(สาย)';
@@ -430,7 +608,8 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
       else if (status === 'BUSINESS_LEAVE') label = '(ลากิจ)';
       else if (status === 'ABSENT') label = '(ขาด)';
       
-      const rmk = remarks[s.id] ? ` [${remarks[s.id]}]` : '';
+      const rmkText = remarks[s.id] || remarks[s.studentId];
+      const rmk = rmkText ? ` [${rmkText}]` : '';
       text += `${idx + 1}. ${s.name} ${label}${rmk}\n`;
     });
     text += `--------------------------\n`;
@@ -588,19 +767,19 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 md:gap-6">
           <div className="space-y-1.5">
             <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1 font-heading">ระดับชั้น</label>
-            <select value={level} onChange={(e) => setLevel(e.target.value)} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 font-bold text-xs text-slate-900 outline-none transition-all">
+            <select value={level} onChange={(e) => handleLevelChange(e.target.value)} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 font-bold text-xs text-slate-900 outline-none transition-all">
               {availableLevels.map(v => <option key={v} value={v}>{v}</option>)}
             </select>
           </div>
           <div className="space-y-1.5">
             <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1 font-heading">แผนกวิชา</label>
-            <select value={dept} onChange={(e) => setDept(e.target.value)} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 font-bold text-xs text-slate-900 outline-none transition-all">
+            <select value={dept} onChange={(e) => handleDeptChange(e.target.value)} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 font-bold text-xs text-slate-900 outline-none transition-all">
               {availableDepts.map(v => <option key={v} value={v}>{v}</option>)}
             </select>
           </div>
           <div className="space-y-1.5">
             <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1 font-heading">ห้องเรียน</label>
-            <select value={room} onChange={(e) => setRoom(e.target.value)} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 font-bold text-xs text-slate-900 outline-none transition-all">
+            <select value={room} onChange={(e) => handleRoomChange(e.target.value)} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-xl px-4 py-3 font-bold text-xs text-slate-900 outline-none transition-all">
               {availableRooms.map(v => <option key={v} value={v}>ห้อง {v}</option>)}
             </select>
           </div>
@@ -812,8 +991,15 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
           {/* Student Checkin Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
             {filteredStudents.map((student, index) => {
-              const currentStatus = currentSession[student.id];
-              const existingRecord = existingTodayRecords.find(r => r.studentId === student.id);
+              const currentStatus = currentSession[student.id] || currentSession[student.studentId];
+              const existingRecord = existingTodayRecords.find(r => 
+                String(r.studentId) === String(student.id) || 
+                String(r.studentId) === String(student.studentId) || 
+                r.id === `MORNING_${r.date}_${student.id}` || 
+                r.id === `MORNING_${r.date}_${student.studentId}` ||
+                r.id.endsWith(`_${student.id}`) ||
+                r.id.endsWith(`_${student.studentId}`)
+              );
               const isStatusChanged = existingRecord && currentStatus && existingRecord.status !== currentStatus;
 
               return (
@@ -886,7 +1072,7 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
                       return (
                         <button 
                           key={key} 
-                          onClick={() => handleStatusChange(student.id, key as AttendanceStatus)} 
+                          onClick={() => handleStatusChange(student, key as AttendanceStatus)} 
                           className={`flex flex-col items-center gap-2 p-2 rounded-xl border-2 transition-all active:scale-95 ${
                             isSelected 
                               ? value.color + ' border-current shadow-md ring-2 ring-current/20 font-black' 
@@ -906,8 +1092,8 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
                       <MessageSquare className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                       <input 
                         type="text" 
-                        value={remarks[student.id] || ''} 
-                        onChange={(e) => handleRemarkChange(student.id, e.target.value)} 
+                        value={remarks[student.id] || remarks[student.studentId] || ''} 
+                        onChange={(e) => handleRemarkChange(student, e.target.value)} 
                         placeholder="ระบุเหตุผลในการลา/สาย/ขาด..." 
                         className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2.5 font-bold text-slate-900 outline-none text-[10px] focus:border-blue-500 transition-all shadow-inner" 
                       />
@@ -920,7 +1106,7 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
                       {existingRecord?.timestamp ? `ล่าสุด: ${existingRecord.timestamp}` : 'ยังไม่มีประวัติวันนี้'}
                     </span>
                     <button
-                      onClick={() => handleSaveSingleStudent(student.id)}
+                      onClick={() => handleSaveSingleStudent(student)}
                       disabled={updatingStudentId === student.id}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black text-blue-600 bg-blue-50 hover:bg-blue-100 active:scale-95 transition-all"
                       title="บันทึกหรืออัพเดทเฉพาะนักเรียนคนนี้ทันที"
@@ -972,7 +1158,7 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {historyRecords.length > 0 ? historyRecords.map((record) => {
-              const student = morningStudents.find(s => s.id === record.studentId) || students.find(s => s.id === record.studentId);
+              const student = morningStudents.find(s => String(s.id) === String(record.studentId) || String(s.studentId) === String(record.studentId)) || students.find(s => String(s.id) === String(record.studentId) || String(s.studentId) === String(record.studentId));
               const isToday = isRecordToday(record);
 
               return (
@@ -1077,7 +1263,7 @@ const MorningAttendance: React.FC<MorningAttendanceProps> = ({
               <div>
                 <h3 className="text-lg font-black text-slate-900 font-heading">แก้ไขข้อมูลการเข้าแถววันนี้</h3>
                 <p className="text-xs font-bold text-slate-500 mt-0.5">
-                  {morningStudents.find(s => s.id === editingHistoryRecord.studentId)?.name || editingHistoryRecord.studentId}
+                  {morningStudents.find(s => String(s.id) === String(editingHistoryRecord.studentId) || String(s.studentId) === String(editingHistoryRecord.studentId))?.name || editingHistoryRecord.studentId}
                 </p>
               </div>
               <button 

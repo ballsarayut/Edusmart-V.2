@@ -93,7 +93,9 @@ const StudentManagement: React.FC<StudentManagementProps> = ({ students, setStud
     setShowModal('ADD');
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const [feedbackMessage, setFeedbackMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     const nLevel = getCleanLevel(String(formData.level || ''));
@@ -101,33 +103,84 @@ const StudentManagement: React.FC<StudentManagementProps> = ({ students, setStud
     nRoom = nRoom.replace(/ภาคค่ำ/g, '').replace(/^ห้อง\s*([0-9]+)$/, '$1').replace(/\s+/g, '');
     if (!nRoom) nRoom = '1';
 
-    if (showModal === 'ADD') {
-      const newStudent: Student = {
-        id: `STU_${Date.now()}`,
-        studentId: formData.studentId || '',
-        name: formData.name || '',
-        level: nLevel,
-        department: formData.department || '',
-        room: nRoom,
-        behaviorScore: 100,
-        shift: isEvening ? 'EVENING' : 'NORMAL'
-      };
-      // Save to Firestore
-      saveToFirestore('students', newStudent);
-      setStudents(prev => [newStudent, ...prev]);
-    } else if (showModal === 'EDIT' && editingStudentId) {
-      const updatedStudent: Student = { 
-        ...formData, 
-        id: editingStudentId, 
-        level: nLevel, 
-        room: nRoom,
-        shift: isEvening ? 'EVENING' : 'NORMAL'
-      } as Student;
-      // Save to Firestore
-      saveToFirestore('students', updatedStudent);
-      setStudents(prev => prev.map(s => s.id === editingStudentId ? updatedStudent : s));
+    try {
+      if (showModal === 'ADD') {
+        const newStudent: Student = {
+          id: `STU_${Date.now()}`,
+          studentId: String(formData.studentId || '').trim(),
+          name: String(formData.name || '').trim(),
+          level: nLevel,
+          department: String(formData.department || '').trim(),
+          room: nRoom,
+          behaviorScore: 100,
+          shift: isEvening ? 'EVENING' : 'NORMAL'
+        };
+        await saveToFirestore('students', newStudent);
+        const updated = [newStudent, ...students.filter(s => s.id !== newStudent.id)];
+        setStudents(updated);
+        try {
+          localStorage.setItem('cached_students_data', JSON.stringify(updated));
+        } catch (e) {}
+        setFeedbackMessage({ type: 'success', text: `เพิ่ม ${newStudent.name} (${isEvening ? 'ภาคค่ำ' : 'ภาคปกติ'}) สำเร็จเรียบร้อย` });
+      } else if (showModal === 'EDIT' && editingStudentId) {
+        const updatedStudent: Student = { 
+          id: editingStudentId, 
+          studentId: String(formData.studentId || '').trim(),
+          name: String(formData.name || '').trim(),
+          level: nLevel, 
+          department: String(formData.department || '').trim(),
+          room: nRoom,
+          behaviorScore: Number(formData.behaviorScore ?? 100),
+          shift: isEvening ? 'EVENING' : 'NORMAL'
+        };
+        await saveToFirestore('students', updatedStudent);
+        const updated = students.map(s => s.id === editingStudentId ? updatedStudent : s);
+        setStudents(updated);
+        try {
+          localStorage.setItem('cached_students_data', JSON.stringify(updated));
+        } catch (e) {}
+        setFeedbackMessage({ 
+          type: 'success', 
+          text: `บันทึกข้อมูล ${updatedStudent.name} (${isEvening ? '🌙 ภาคค่ำ' : '☀️ ภาคปกติ'}) สำเร็จเรียบร้อย` 
+        });
+      }
+      setTimeout(() => setFeedbackMessage(null), 3500);
+      setShowModal(null);
+    } catch (err) {
+      console.error("Save student error:", err);
+      setFeedbackMessage({ type: 'error', text: 'เกิดข้อผิดพลาดในการบันทึกข้อมูล กรุณาลองใหม่อีกครั้ง' });
+      setTimeout(() => setFeedbackMessage(null), 4000);
     }
-    setShowModal(null);
+  };
+
+  const handleToggleShift = async (student: Student) => {
+    const isCurrentlyEvening = isEveningStudent(student);
+    const targetShift = isCurrentlyEvening ? 'NORMAL' : 'EVENING';
+    const updatedStudent: Student = {
+      ...student,
+      level: getCleanLevel(student.level),
+      shift: targetShift
+    };
+
+    try {
+      await saveToFirestore('students', updatedStudent);
+      const updated = students.map(s => s.id === student.id ? updatedStudent : s);
+      setStudents(updated);
+      try {
+        localStorage.setItem('cached_students_data', JSON.stringify(updated));
+      } catch (e) {}
+      setFeedbackMessage({
+        type: 'success',
+        text: targetShift === 'EVENING' 
+          ? `🌙 เปลี่ยน ${student.name} เป็น "ภาคค่ำ" เรียบร้อยแล้ว` 
+          : `☀️ เปลี่ยน ${student.name} เป็น "ภาคปกติ" เรียบร้อยแล้ว`
+      });
+      setTimeout(() => setFeedbackMessage(null), 3000);
+    } catch (err) {
+      console.error("Toggle shift error:", err);
+      setFeedbackMessage({ type: 'error', text: 'ไม่สามารถเปลี่ยนกะการเรียนได้' });
+      setTimeout(() => setFeedbackMessage(null), 3000);
+    }
   };
 
   const seedDataToCloud = async () => {
@@ -135,14 +188,20 @@ const StudentManagement: React.FC<StudentManagementProps> = ({ students, setStud
     
     setIsSeeding(true);
     try {
-      // Update local state first for immediate UI response
-      setStudents(MOCK_STUDENTS);
-      
-      await saveMultipleToFirestore('students', MOCK_STUDENTS);
-      // Local storage helps prevent accidental multiple seeds on the same device
+      // Filter out any IDs user has deleted so deleted students never reappear
+      let deletedIds: string[] = [];
+      try {
+        deletedIds = JSON.parse(localStorage.getItem('deleted_student_ids') || '[]');
+      } catch (e) {}
+      const activeMock = MOCK_STUDENTS.filter(s => !deletedIds.includes(String(s.id)));
+
+      setStudents(activeMock);
+      await saveMultipleToFirestore('students', activeMock);
       localStorage.setItem('seeded_students_v1', 'true');
+      setFeedbackMessage({ type: 'success', text: `นำเข้าข้อมูลนักเรียน ${activeMock.length} คนสำเร็จ` });
+      setTimeout(() => setFeedbackMessage(null), 3000);
     } catch (error) {
-      console.warn("Cloud seeding partially failed (likely permissions), but local list updated.", error);
+      console.warn("Cloud seeding partially failed, but local list updated.", error);
     } finally {
       setIsSeeding(false);
     }
@@ -151,17 +210,32 @@ const StudentManagement: React.FC<StudentManagementProps> = ({ students, setStud
   const deleteStudent = async (id: string) => {
     setIsDeleting(true);
     try {
-      // Delete from Firestore
+      // 1. Delete from Firestore cloud
       await deleteFromFirestore('students', id);
-      // Wait for onSnapshot to update state automatically via syncCollection
-      // However, we can also update locally for immediate UX if we want
-      // But we should trust the snapshot. 
-      // If we update locally AND snapshot re-syncs, it's fine.
-      setStudents(prev => prev.filter(s => s.id !== id));
+      
+      // 2. Remove from local React state
+      const updated = students.filter(s => s.id !== id);
+      setStudents(updated);
+
+      // 3. Update localStorage cache so it never returns on refresh
+      try {
+        localStorage.setItem('cached_students_data', JSON.stringify(updated));
+        
+        // 4. Record in deleted_student_ids so mock data or background sync never brings it back
+        const deletedIds: string[] = JSON.parse(localStorage.getItem('deleted_student_ids') || '[]');
+        if (!deletedIds.includes(String(id))) {
+          deletedIds.push(String(id));
+          localStorage.setItem('deleted_student_ids', JSON.stringify(deletedIds));
+        }
+      } catch (e) {}
+
       setStudentToDelete(null);
+      setFeedbackMessage({ type: 'success', text: 'ลบข้อมูลนักเรียนออกจากระบบเรียบร้อยแล้ว' });
+      setTimeout(() => setFeedbackMessage(null), 3000);
     } catch (error) {
       console.error("Delete failed:", error);
-      alert("ไม่สามารถลบข้อมูลได้ กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ต");
+      setFeedbackMessage({ type: 'error', text: 'ไม่สามารถลบข้อมูลได้ กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ต' });
+      setTimeout(() => setFeedbackMessage(null), 3500);
     } finally {
       setIsDeleting(false);
     }
@@ -232,6 +306,20 @@ const StudentManagement: React.FC<StudentManagementProps> = ({ students, setStud
 
   return (
     <div className="space-y-6 md:space-y-8 animate-in slide-in-from-bottom-4 duration-500 pb-20">
+      {feedbackMessage && (
+        <div className={`px-6 py-4 rounded-2xl shadow-xl flex items-center justify-between animate-in slide-in-from-top-3 duration-300 ${
+          feedbackMessage.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'
+        }`}>
+          <div className="flex items-center gap-3">
+            <CheckCircle2 size={22} className="shrink-0" />
+            <span className="font-black text-sm md:text-base">{feedbackMessage.text}</span>
+          </div>
+          <button onClick={() => setFeedbackMessage(null)} className="p-1 hover:bg-black/20 rounded-lg">
+            <X size={18} />
+          </button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between px-1">
         <div className="flex items-center gap-3">
            <div className={`w-3 h-3 rounded-full ${isSyncing ? 'bg-amber-500 animate-pulse' : students.length > 0 ? 'bg-green-500' : 'bg-red-500'}`} />
@@ -383,17 +471,21 @@ const StudentManagement: React.FC<StudentManagementProps> = ({ students, setStud
                   {s.name.charAt(0)}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-between gap-2">
                     <p className="font-black text-slate-900 text-base leading-tight truncate font-heading">{s.name}</p>
-                    {isEve ? (
-                      <span className="px-2 py-0.5 bg-indigo-100 border border-indigo-200 text-indigo-800 rounded text-[9px] font-black shrink-0">
-                        ภาคค่ำ
-                      </span>
-                    ) : (
-                      <span className="px-2 py-0.5 bg-emerald-100 border border-emerald-200 text-emerald-800 rounded text-[9px] font-black shrink-0">
-                        ภาคปกติ
-                      </span>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleToggleShift(s)}
+                      title={isEve ? 'คลิกเพื่อเปลี่ยนเป็นภาคปกติ' : 'คลิกเพื่อเปลี่ยนเป็นภาคค่ำ'}
+                      className={`px-2.5 py-1 rounded-lg text-[9px] font-black border transition-all active:scale-95 flex items-center gap-1 shrink-0 cursor-pointer ${
+                        isEve 
+                          ? 'bg-indigo-50 border-indigo-200 text-indigo-800 hover:bg-indigo-100' 
+                          : 'bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100'
+                      }`}
+                    >
+                      {isEve ? '🌙 ภาคค่ำ' : '☀️ ภาคปกติ'}
+                      <span className="text-[7px] opacity-60">สลับ</span>
+                    </button>
                   </div>
                   <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">ID: {s.studentId}</p>
                   <div className="flex flex-wrap gap-1.5 mt-3">
